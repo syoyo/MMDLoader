@@ -1,5 +1,7 @@
 # MMDLoader
 
+![MMDLoaderExample](https://github.com/syoyo/MMDLoader/blob/master/mmdview.gif?raw=true)
+
 (c) model : http://mikumikudance.wikia.com/wiki/Miku_Hatsune_(Lat)
 (c) motion: http://mmd.nomeu.org/thumbs/sm13622845
 
@@ -15,9 +17,13 @@ Simply copy `mmd_*`, `pmd_*` and `vmd_*` files to your project.
 
 OpenGL(GLUT) example viewer is included(see viewer_main.cc).
 
+## Features
+
 Supported
 
-* Bone animation(IK)
+* PMD model loading.
+* VMD motion loading.
+* Bone animation(IK).
 
 Not supported(Contributors welcome!)
 
