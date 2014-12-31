@@ -3,7 +3,7 @@
 
 #include <vector>
 #include <string>
-
+#include <GL/gl.h>
 //
 // PMD format:
 // http://blog.goo.ne.jp/torisu_tetosuki/e/209ad341d3ece2b1b4df24abf619d6e4
@@ -42,6 +42,7 @@ struct PMDMaterial {
                             // 10.bmp:0x09
   unsigned char edge_flag;  // contour, shadow
   unsigned int vertex_count;
+  //GLuint texture_id;//Open GL UV TextureID
   char texture_filename[20];
 } ATTRIBUTE_PACKED;
 
@@ -146,6 +147,7 @@ public:
   std::vector<PMDVertex> vertices_;
   std::vector<unsigned short> indices_;
   std::vector<PMDMaterial> materials_;
+  std::vector<GLuint> texids_;
   std::vector<Bone> bones_;
   std::vector<IK> iks_;
   std::vector<Morph> morphs_;

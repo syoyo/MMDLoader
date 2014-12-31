@@ -1,8 +1,10 @@
 #include <cassert>
 #include <cstring> // memcpy
 #include <cstdio>
+#include <GL/gl.h>
 
 #include "pmd_reader.h"
+
 
 using namespace mmd;
 
@@ -70,6 +72,25 @@ static bool ParseBone(PMDModel *model, FILE *fp) {
     model->bones_.push_back(bone);
   }
 
+  return true;
+}
+
+static bool ParseMorph(PMDModel *model,FILE *fp){
+  unsigned short numMorphs;
+  ReadBytes(reinterpret_cast<unsigned char *>(&numMorphs), sizeof(unsigned short),
+            fp);
+  printf("[PMD] Num Morphs: %d\n", numMorphs);           
+  
+  std::vector<Morph> morphs(numMorphs);
+  for (int i = 0; i < numMorphs; i++) {
+    PMDMorph pmdMorph;
+    ReadBytes(reinterpret_cast<unsigned char *>(&pmdMorph), sizeof(PMDMorph), fp);
+    std::vector<PMDMorphVertex> vertices(pmdMorph.vertex_count);
+    for (int j = 0; j < pmdMorph.vertex_count; j++){
+		ReadBytes(reinterpret_cast<unsigned char *>(&vertices[j]), sizeof(PMDMorphVertex), fp);
+	}
+	printf("%d : %s\ttype : %d\n",i,pmdMorph.name,pmdMorph.type);
+  }
   return true;
 }
 
@@ -182,15 +203,50 @@ PMDModel *PMDReader::LoadFromFile(const std::string &filename) {
     printf("[PMD] Num materials: %d\n", numMaterials);
     assert(sizeof(PMDMaterial) == 70);
     model->materials_.resize(numMaterials);
+    model->texids_.resize(numMaterials);
     ReadBytes(reinterpret_cast<unsigned char *>(&(model->materials_[0])),
               sizeof(PMDMaterial) * numMaterials, fp);
 
     // validate
     size_t sumVertexCount = 0;
+    
+    
+    printf("Material:\n");
     for (int i = 0; i < numMaterials; i++) {
       assert((model->materials_[i].vertex_count % 3) == 0);
       sumVertexCount += model->materials_[i].vertex_count;
-
+      
+      /*
+      printf("diffuse : r(%f) g(%f) b(%f) , alpha(%f)\n",model->materials_[i].diffuse[0],model->materials_[i].diffuse[1],model->materials_[i].diffuse[2],model->materials_[i].alpha);
+      printf("specular : r(%f) g(%f) b(%f) , specularity(%f)\n",model->materials_[i].specular[0],model->materials_[i].specular[1],model->materials_[i].specular[2],model->materials_[i].specularity);
+      printf("ambient : r(%f) g(%f) b(%f)\n",model->materials_[i].ambient[0],model->materials_[i].ambient[1],model->materials_[i].ambient[2]);
+      printf("toon_index : %d\ntoon??.bmp \n// 0.bmp:0xFF, 1(01).bmp:0x00 ... // 10.bmp:0x09",model->materials_[i].toon_index);
+	  printf("edge_flag : %d // contour, shadow\n",model->materials_[i].edge_flag);
+	  printf("vertex_count : %d\n",model->materials_[i].vertex_count);
+	  printf("texture_filename : %s\n",model->materials_[i].texture_filename);*/
+	  /*
+	  char tex_file[256]="";
+	  char spa_file[256]="";
+	  
+	  
+	  char * str =model->materials_[i].texture_filename;
+	  char * pch;
+	  pch = strstr(str,"*");
+	  if(pch==NULL){
+		  strncpy (tex_file,str,strlen(str));
+		  printf("tex_file : %s\n",tex_file);
+	  }
+	  else{
+		  strncpy (tex_file,str,pch-str);
+		  strncpy (spa_file,pch+1,strlen(str)-(pch+1-str));
+		  printf("tex_file : %s \t spa_fie : %s\n",tex_file,spa_file);
+	  }
+	  char tmp_path[256]="test/";*/
+	  
+	  
+	  //int tid=loadBMP(const char * imgpath);
+	  //assert(tid);
+	  
       // DBG
       // printf("mat[%d] texname = %s\n", i,
       // model->materials_[i].texture_filename);
@@ -199,12 +255,24 @@ PMDModel *PMDReader::LoadFromFile(const std::string &filename) {
   }
 
   assert(ParseBone(model, fp));
-  assert(ParseIK(model, fp));
-
+  assert(ParseIK(model, fp));//IK Have been finished?
+  assert(ParseMorph(model, fp));
   // Just ignore other stuff at this time.
 
-  // IKs(todo)
-  {}
+  // IKs(todo)  :: Finished in function Parse IK
+  {
+	  /*
+	  int numIKs;
+	  ReadBytes(reinterpret_cast<unsigned char *>(&numIKs), 2, fp);
+	  
+	  model->materials_.resize(numIKs);
+	  ReadBytes(reinterpret_cast<unsigned char *>(&(model->iks_[0])),
+              sizeof(IK) * numIKs, fp);
+      for(int i=0;i<numIKs;i++){
+		  assert( model->iks_[i].chainLength == model->iks_[i].childBoneIndices.size() );
+	  }
+      assert(numIKs == model->iks_.size());*/
+  }
 
   // Morphs(todo)
   {}
