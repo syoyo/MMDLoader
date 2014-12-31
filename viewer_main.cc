@@ -27,6 +27,9 @@
 #include "mmd_scene.h"
 #include "mmd_math.h"
 
+#include "tex_bmp.h"
+#include "soil/SOIL.h"
+
 // image loader
 //#include "stb_image.c"
 
@@ -56,6 +59,8 @@ static float scenesize = 20.0f;
 static int current_frame = 0;
 static int sub_frame = 0;
 static int frame_step = 1; // less = faster playback.
+
+char tex_path[256];
 
 PMDModel *model = NULL;
 VMDAnimation *anim = NULL;
@@ -509,11 +514,13 @@ static void SetBoneMatrix(int idx, Bone &bone, int frame) {
 };
 
 static void Update() {
+	
 #if 1
   for (int i = 0; i < model->bones_.size(); i++) {
     Bone &b = model->bones_[i];
     if (b.parentIndex != 0xFFFF) {
-      assert(b.parentIndex < i);
+		//printf("Bone is Broken.\n");
+      //assert(b.parentIndex < i);
     }
 
     SetBoneMatrix(i, b, current_frame);
@@ -561,31 +568,152 @@ static void Update() {
 #endif
 }
 
+/*static void ApplyGLNormal(const Vertex &v[3])
+{
+	Vector d1 , d2;
+	d1.x = v[1].x - v[0].x;
+	d1.y = v[1].y - v[0].y;
+	d1.z = v[1].z - v[0].z;
+	
+	d2.x = v[2].x - v[0].x;
+	d2.y = v[2].y - v[0].y;
+	d2.z = v[2].z - v[0].z;
+
+	Vector cross_product;
+	cross_product.x = d1.y*d2.z - d1.z*d2.y;
+	cross_product.y = d1.z*d2.x - d1.x*d2.z;
+	cross_product.z = d1.x*d2.y - d1.y*d2.x;
+
+	float distance = sqrt(	(cross_product.x*cross_product.x) +
+				(cross_product.y*cross_product.y) +
+				(cross_product.z*cross_product.z));
+	
+	Vector normal;
+	normal.x = cross_product.x / distance;
+	normal.y = cross_product.y / distance;
+	normal.z = cross_product.z / distance;
+
+	glNormal3f(normal.x , normal.y , normal.z);
+}
+*/
+int t=5;
+bool first_frame=true;
+int tid=0;
 static void DrawMesh() {
+  
+  
+	
+	
   glEnable(GL_NORMALIZE);
   glDisable(GL_LIGHTING);
   glEnable(GL_DEPTH_TEST);
-  glBegin(GL_TRIANGLES);
+  glEnable(GL_TEXTURE_2D);
+  glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE,GL_REPLACE);
+  
+  glCullFace(GL_FRONT);
+  glEnable(GL_CULL_FACE);
+  
+  
+  
+  /*
+   * float diffuse[3];
+  float alpha;
+  float specularity;
+  float specular[3];
+  float ambient[3];
+   * */
+  int ind=0;
+  for( int i = 0; i <= model->materials_.size() - 1  ;i++){
+	  PMDMaterial mat=model->materials_[i];
+	  int tex_id=model->texids_[i];
+	  //mat.alpha
+	  GLfloat diff[] = {mat.diffuse[0],mat.diffuse[1],mat.diffuse[2],1};
+	  GLfloat ambi[] = {mat.ambient[0],mat.ambient[1],mat.ambient[2],1};
+	  GLfloat spec[] = {mat.specular[0],mat.specular[1],mat.specular[2],1};
+	  glMaterialfv(GL_FRONT_AND_BACK,GL_DIFFUSE,diff);
+	  glMaterialfv(GL_FRONT_AND_BACK,GL_AMBIENT,ambi);
+	  glMaterialfv(GL_FRONT_AND_BACK,GL_SPECULAR,spec);
+	  glMaterialf(GL_FRONT_AND_BACK,GL_SHININESS,mat.specularity);
+	  
+	  if(0x100 & mat.edge_flag == 0x100){
+		  glDisable(GL_CULL_FACE);
+	  }
+	  else{
+		  glEnable(GL_CULL_FACE);
+	  }
+	  
+	  if(tex_id>0){
+		  glEnable(GL_TEXTURE_2D);
+		  glBindTexture(GL_TEXTURE_2D , tex_id);
+	  }
+	  else{
+		  //glDisable(GL_TEXTURE_2D);
+		  //glColor3f(collist[i%7][0], collist[i%7][1], collist[i%7][2]);
+	  }
+	  
+	  glBegin(GL_TRIANGLES);
+	  for(int j=0;j<mat.vertex_count && ind < model->indices_.size();j++,ind++){
+		  int idx = model->indices_[ind];
+		  glTexCoord2f (model->vertices_[idx].uv[0],1-model->vertices_[idx].uv[1]);
+		  glVertex3f(renderVertices[3 * idx + 0], renderVertices[3 * idx + 1],
+				   -renderVertices[3 * idx + 2]);
+		  //glNormal3f(); TODO
+		  
+	  }
+	  glEnd();
+	  
+  }
+  
+  
+  /*
+  int mit=model->materials_.size();
+  int mco=0;
   for (int i = 0; i < model->indices_.size(); i++) {
+	if(mco<=0){
+		mco=model->materials_[--mit].vertex_count;
+	}
+	
     int idx = model->indices_[i];
     // printf("v[%d] = %f, %f, %f\n",
     //  i,
     //  renderVertices[3*idx+0],
     //  renderVertices[3*idx+1],
     //  renderVertices[3*idx+2]);
-    int cidx = model->vertices_[idx].bone[0] % 7;
+    int cidx = mit%t;//model->vertices_[idx].bone[0] % 7;
+    int tid=model->texids_[mit];
+    if(tid>0){
+		//glEnable(GL_TEXTURE_2D);
+		
+		glBindTexture(GL_TEXTURE_2D  , tid);
+		glTexCoord2f (model->vertices_[idx].uv[0],model->vertices_[idx].uv[1]);
+		//glColor3f(0,0,0);
+	}
+	else{
+		//glDisable(GL_TEXTURE_2D);
+		glColor3f(collist[cidx][0], collist[cidx][1], collist[cidx][2]);
+		//glColor3f(model->materials_[mit].diffuse[0],model->materials_[mit].diffuse[1],model->materials_[mit].diffuse[2]);
+	}
     // printf("cidx = %d\n", cidx);
-    glColor3f(collist[cidx][0], collist[cidx][1], collist[cidx][2]);
+    
     glVertex3f(renderVertices[3 * idx + 0], renderVertices[3 * idx + 1],
                -renderVertices[3 * idx + 2]);
+    mco--;
+    
+    
     // glVertex3f(model->vertices_[idx].pos[0],
     //           model->vertices_[idx].pos[1],
     //           -model->vertices_[idx].pos[2]);
   }
-  glEnd();
+  //glVertex3f(renderVertices[3 * idx + 0], renderVertices[3 * idx + 1],
+  //             -renderVertices[3 * idx + 2]);
+  */
+  
+  
+  
   glDisable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
   glDisable(GL_NORMALIZE);
+  glDisable(GL_TEXTURE_2D);
 }
 
 static void DrawBoneOriginal() {
@@ -746,7 +874,7 @@ void display() {
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
 
-  gluLookAt(view_org[0], view_org[1], view_org[2], view_tgt[0], view_tgt[1],
+  gluLookAt(view_org[0], view_org[1]+0.5, view_org[2], view_tgt[0], view_tgt[1]+0.5,
             view_tgt[2], 0, 1, 0); /* Y up */
 
   glMultMatrixf(&(m[0][0]));
@@ -768,8 +896,8 @@ void display() {
   // DrawIK();
   DrawMesh();
 
-  DrawBone();
-  // DrawBoneOriginal();
+  //DrawBone();
+  //DrawBoneOriginal();
 
   glutSwapBuffers();
 }
@@ -792,6 +920,27 @@ void animate() {
     sub_frame = 0;
     current_frame++;
   }
+  //FPS : 30
+static int lastUpdate = 0;
+static int frames = 0;
+char buf[20];
+
+glutPostRedisplay(); // calls your display callback function
+glutSwapBuffers();
+
+int currentTime = glutGet( GLUT_ELAPSED_TIME );
+frames++;
+
+// is the time difference between lastUpdate and current time > one second ( 1000 ms )?
+if ( ( currentTime - lastUpdate ) >= 1000 ){
+
+sprintf( buf, "FPS: %d", frames );
+glutSetWindowTitle( buf );
+frames = 0;
+lastUpdate = currentTime;
+
+}
+//End FPS : 30
 
   printf("\rFrame: %d", current_frame);
   fflush(stdout);
@@ -799,7 +948,7 @@ void animate() {
   //	add_quats(prev_quat, curr_quat, curr_quat);
   //}
 
-  glutPostRedisplay();
+  //glutPostRedisplay();
 }
 
 void mouse(int button, int state, int x, int y) {
@@ -908,7 +1057,22 @@ void keyboard(unsigned char k, int x, int y) {
     view_org[2] = 5.0;
     view_tgt[0] = view_tgt[1] = view_tgt[2] = 0.0;
     break;
-
+  case '+': /* space */
+    /* reset view */
+    view_org[2] ++;
+    break;
+  case '-': /* space */
+    /* reset view */
+    view_org[2] --;
+    break;
+  case 'a': /* space */
+    /* reset view */
+    t ++;printf("t=%d\n",t);
+    break;
+  case 's': /* space */
+    /* reset view */
+    t --;printf("t=%d\n",t);
+    break;
   default:
     break;
   }
@@ -959,12 +1123,68 @@ void init() {
   glEnable(GL_LIGHTING);
   glEnable(GL_LIGHT0);
   glEnable(GL_DEPTH_TEST);
+  
+  if(first_frame){
+	  
+	  first_frame=false;
+	  model->texids_.resize(model->materials_.size());
+	  int sum_indices=0;
+	  for (int i = 0; i < model->materials_.size(); i++) {		  
+		  char tex_file[256]="";
+		  char spa_file[256]=""; 
+		  
+		  char * str =model->materials_[i].texture_filename;
+		  char * pch;
+		  pch = strstr(str,"*");
+		  if(pch==NULL){
+			  strncpy (tex_file,str,strlen(str));
+			  printf("tex_file : %s\n",tex_file);
+		  }
+		  else{
+			  strncpy (tex_file,str,pch-str);
+			  strncpy (spa_file,pch+1,strlen(str)-(pch+1-str));
+			  printf("tex_file : %s \t spa_fie : %s\n",tex_file,spa_file);
+		  }
+		  char tmp_path[256];//"hzeo_kaitoV3formal/";
+		  strcpy(tmp_path,tex_path);
+		  //printf("%s\n",strcat(tmp_path,tex_file));
+		  {
+			  strcat(tmp_path,tex_file);
+			model->texids_[i]= SOIL_load_OGL_texture
+								(
+									tmp_path,
+									SOIL_LOAD_AUTO,
+									SOIL_CREATE_NEW_ID,
+									SOIL_FLAG_MIPMAPS | SOIL_FLAG_INVERT_Y | SOIL_FLAG_NTSC_SAFE_RGB | SOIL_FLAG_COMPRESS_TO_DXT
+								);
+								
+							/* check for an error during the load process */
+							if( 0 == model->texids_[i] )
+							{
+								printf( "SOIL loading error: '%s'\n", SOIL_last_result() );
+							}
+
+			
+		  }
+		  sum_indices+=model->materials_[i].vertex_count;
+		  printf("> %d : %d\n",i,model->texids_[i]);
+		  //if(model->texids_[i]>0)
+			//tid=model->texids_[i];
+	  }
+	  
+	  printf("#%d %d\n\n",model->indices_.size(),sum_indices);
+  }
+  
+  
 }
 
 int main(int argc, char **argv) {
   if (argc < 3) {
     printf("Usage: %s input.pmd input.vmd\n", argv[0]);
     exit(-1);
+  }
+  if(argc==4){
+	  strncpy( tex_path,argv[3],strlen(argv[3]));
   }
 
   load(argv[1], argv[2]);
