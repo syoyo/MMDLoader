@@ -56,6 +56,7 @@ static float scenesize = 20.0f;
 static int current_frame = 0;
 static int sub_frame = 0;
 static int frame_step = 1; // less = faster playback.
+static bool do_animate = true;
 
 PMDModel *model = NULL;
 VMDAnimation *anim = NULL;
@@ -787,17 +788,21 @@ void reshape(int w, int h) {
 }
 
 void animate() {
-  sub_frame++;
-  if (sub_frame >= frame_step) {
-    sub_frame = 0;
-    current_frame++;
-  }
+  if (do_animate) {
 
-  printf("\rFrame: %d", current_frame);
-  fflush(stdout);
-  // if (spinning) {
-  //	add_quats(prev_quat, curr_quat, curr_quat);
-  //}
+    sub_frame++;
+    if (sub_frame >= frame_step) {
+      sub_frame = 0;
+      current_frame++;
+    }
+
+    printf("\rFrame: %d", current_frame);
+    fflush(stdout);
+    // if (spinning) {
+    //	add_quats(prev_quat, curr_quat, curr_quat);
+    //}
+
+  }
 
   glutPostRedisplay();
 }
@@ -896,6 +901,9 @@ void keyboard(unsigned char k, int x, int y) {
   case 27: /* ESC */
   case 'q':
     exit(0);
+    break;
+  case 'a':
+    do_animate = !do_animate;
     break;
   case ' ': /* space */
     /* reset view */

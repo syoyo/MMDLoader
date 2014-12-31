@@ -73,6 +73,24 @@ static bool ParseBone(PMDModel *model, FILE *fp) {
   return true;
 }
 
+static bool ParseMorph(PMDModel *model,FILE *fp){
+  unsigned short numMorphs;
+  ReadBytes(reinterpret_cast<unsigned char *>(&numMorphs), sizeof(unsigned short),
+            fp);
+  printf("[PMD] Num Morphs: %d\n", numMorphs);           
+  
+  std::vector<Morph> morphs(numMorphs);
+  for (int i = 0; i < numMorphs; i++) {
+    PMDMorph pmdMorph;
+    ReadBytes(reinterpret_cast<unsigned char *>(&pmdMorph), sizeof(PMDMorph), fp);
+    std::vector<PMDMorphVertex> vertices(pmdMorph.vertex_count);
+    for (int j = 0; j < pmdMorph.vertex_count; j++){
+    ReadBytes(reinterpret_cast<unsigned char *>(&vertices[j]), sizeof(PMDMorphVertex), fp);
+  }
+  }
+  return true;
+}
+
 static bool ParseIK(PMDModel *model, FILE *fp) {
   unsigned short numIKs;
   ReadBytes(reinterpret_cast<unsigned char *>(&numIKs), sizeof(unsigned short),
@@ -200,16 +218,7 @@ PMDModel *PMDReader::LoadFromFile(const std::string &filename) {
 
   assert(ParseBone(model, fp));
   assert(ParseIK(model, fp));
-
-  // Just ignore other stuff at this time.
-
-  // IKs(todo)
-  {}
-
-  // Morphs(todo)
-  {}
-
-  // And more ...
+  assert(ParseMorph(model, fp));
 
   fclose(fp);
 
