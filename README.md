@@ -53,11 +53,12 @@ Supported
 * PMD model loading.
 * VMD motion loading.
 * Bone animation(IK).
+* Morph.
 
-Not supported(Contributors welcome!)
+TODOs
+(Contributors welcome!)
 
-* Morph
-* Physics(Bullet)
+* [ ] Physics(Bullet)
 
 ## Author
 
