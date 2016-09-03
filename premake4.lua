@@ -54,9 +54,16 @@ solution "MMDTestSolution"
          defines { 'NOMINMAX', '_LARGEFILE_SOURCE', '_FILE_OFFSET_BITS=64' }
 
       -- Linux specific
-      if (os.is("linux")) then
+      configuration { "linux", "gmake" }
          defines { '_LARGEFILE_SOURCE', '_FILE_OFFSET_BITS=64' }
-      end
+         defines { 'ENABLE_GLM' }
+         -- defines { 'ENABLE_BULLET' }
+         -- includedirs { "./extlibs/bullet/bullet3/src" }
+         -- libdirs { "./extlibs/bullet/bullet3/src/BulletDynamics"
+         --         , "./extlibs/bullet/bullet3/src/BulletCollision" 
+         --         , "./extlibs/bullet/bullet3/src/LinearMath" } 
+         -- links { "BulletDynamics", "BulletCollision", "LinearMath" }
+         links { "GL", "glut" }
 
       configuration "Debug"
          defines { "DEBUG" } -- -DDEBUG
