@@ -1,5 +1,10 @@
+newoption {
+   trigger = "with-glm",
+   description = "Build with GLM replacement for gluPerspecive and gluLookat"
+}
+
 sources = {
-	"viewer_main.cc",
+   "viewer_main.cc",
    "trackball.cpp"
    }
 
@@ -56,7 +61,9 @@ solution "MMDTestSolution"
       -- Linux specific
       configuration { "linux", "gmake" }
          defines { '_LARGEFILE_SOURCE', '_FILE_OFFSET_BITS=64' }
-         defines { 'ENABLE_GLM' }
+         if _OPTIONS["with-glm"] then
+             defines { 'ENABLE_GLM' }
+         end
          -- defines { 'ENABLE_BULLET' }
          -- includedirs { "./extlibs/bullet/bullet3/src" }
          -- libdirs { "./extlibs/bullet/bullet3/src/BulletDynamics"
