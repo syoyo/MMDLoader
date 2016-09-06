@@ -30,6 +30,12 @@
 // image loader
 //#include "stb_image.c"
 
+#ifdef ENABLE_GLM
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#endif
+
 using namespace mmd;
 
 #define WINDOW_WIDTH 800
@@ -745,10 +751,18 @@ void display() {
   // set_orthoview_pass(width, height);
 
   glMatrixMode(GL_MODELVIEW);
-  glLoadIdentity();
 
+#ifdef ENABLE_GLM
+  glm::vec3 origin(view_org[0], view_org[1], view_org[2]);
+  glm::vec3 target(view_tgt[0], view_tgt[1], view_tgt[2]);
+  glm::vec3 up(0, 1, 0);
+  glm::mat4 model_view = glm::lookAt(origin, target, up);
+  glLoadMatrixf(glm::value_ptr(model_view));
+#else
+  glLoadIdentity();
   gluLookAt(view_org[0], view_org[1], view_org[2], view_tgt[0], view_tgt[1],
             view_tgt[2], 0, 1, 0); /* Y up */
+#endif
 
   glMultMatrixf(&(m[0][0]));
 
@@ -778,8 +792,13 @@ void display() {
 void reshape(int w, int h) {
   glViewport(0, 0, w, h);
   glMatrixMode(GL_PROJECTION);
+#ifdef ENABLE_GLM
+  glm::mat4 projection = glm::perspective(45.0f, (float)w / (float)h, 0.1f, 50.0f);
+  glLoadMatrixf(glm::value_ptr(projection));
+#else
   glLoadIdentity();
   gluPerspective(45.0f, (float)w / (float)h, 0.1f, 50.0f);
+#endif
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
 
