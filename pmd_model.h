@@ -140,7 +140,7 @@ struct Morph {
 
 class PMDModel {
 public:
-  PMDModel() {};
+  PMDModel() : boneBboxMinMax_(NULL), boneBboxVertices_(NULL) {};
   ~PMDModel() {};
 
   std::vector<PMDVertex> vertices_;
@@ -153,6 +153,9 @@ public:
   std::string name_;
   std::string comment_;
   float version_;
+
+  float* boneBboxMinMax_;
+  float* boneBboxVertices_;
 };
 
 } // namespace
