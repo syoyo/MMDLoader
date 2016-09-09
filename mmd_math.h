@@ -1,6 +1,8 @@
 #ifndef __MMD_MATH_H__
 #define __MMD_MATH_H__
 
+#include <math.h>
+
 namespace mmd {
 
 struct Vector3 {
