@@ -226,10 +226,14 @@ static void CalculateBboxMinMax() {
   }
   for (int p = 0; p < model->bones_.size(); p++) {
     VSub(model->bones_[p].dim, model->bones_[p].max, model->bones_[p].min);
+
     Vector3 axis;
     axis.x = model->bones_[p].pos[0];
     axis.y = model->bones_[p].pos[1];
     axis.z = model->bones_[p].pos[2];
+
+    // Bone matrix is defined in absolute coordinate.
+    // Pass vertex min/max in relative coordinate to bone matrix.
     VSub(model->bones_[p].max, model->bones_[p].max, axis);
     VSub(model->bones_[p].min, model->bones_[p].min, axis);
   }
