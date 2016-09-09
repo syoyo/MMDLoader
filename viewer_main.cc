@@ -787,8 +787,6 @@ static void DrawBoneOriginal() {
   glEnable(GL_LIGHTING);
 }
 
-static void DrawAxis();
-
 static void DrawBone() {
   glDisable(GL_LIGHTING);
   glLineWidth(3);
