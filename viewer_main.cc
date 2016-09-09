@@ -829,6 +829,7 @@ static void DrawBone() {
 static void DrawIK() {
   glDisable(GL_LIGHTING);
   glPointSize(5.0);
+
   for (int i = 0; i < model->iks_.size(); i++) {
     IK &ik = model->iks_[i];
     Bone &root = model->bones_[ik.boneIndex];
@@ -869,6 +870,8 @@ static void DrawIK() {
       p = &b;
     }
   }
+
+  glPointSize(1.0);
   glEnable(GL_LIGHTING);
 }
 
