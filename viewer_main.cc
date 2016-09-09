@@ -756,7 +756,8 @@ static void DrawBbox() {
 
 static void DrawBoneOriginal() {
   glDisable(GL_LIGHTING);
-  glLineWidth(3);
+  glLineWidth(3.0);
+
   for (int i = 0; i < model->bones_.size(); i++) {
     Bone &b = model->bones_[i];
 
@@ -784,12 +785,15 @@ static void DrawBoneOriginal() {
       glEnd();
     }
   }
+
+  glLineWidth(1.0);
   glEnable(GL_LIGHTING);
 }
 
 static void DrawBone() {
   glDisable(GL_LIGHTING);
-  glLineWidth(3);
+  glLineWidth(3.0);
+
   for (int i = 0; i < model->bones_.size(); i++) {
     Bone &b = model->bones_[i];
 
@@ -817,6 +821,8 @@ static void DrawBone() {
       glEnd();
     }
   }
+
+  glLineWidth(1.0);
   glEnable(GL_LIGHTING);
 }
 
