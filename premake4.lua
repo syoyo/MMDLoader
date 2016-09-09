@@ -1,6 +1,11 @@
 newoption {
    trigger = "with-glm",
-   description = "Build with GLM replacement for gluPerspecive and gluLookat"
+   description = "Build with GLM replacement for glu"
+}
+
+newoption {
+   trigger = "with-bullet",
+   description = "Build with Bullet physics"
 }
 
 sources = {
@@ -42,12 +47,14 @@ solution "MMDTestSolution"
          links { "OpenGL.framework", "GLUT.framework" }  -- Use system's SDL
 
          -- Bullet physics
-         -- defines { 'ENABLE_BULLET' }
-         -- includedirs { "./../../extlibs/bullet/bullet-2.79/src" }
-         -- libdirs { "./../../extlibs/bullet/bullet-2.79/src/BulletDynamics"
-         --         , "./../../extlibs/bullet/bullet-2.79/src/BulletCollision" 
-         --         , "./../../extlibs/bullet/bullet-2.79/src/LinearMath" } 
-         -- links { "BulletDynamics", "BulletCollision", "LinearMath" }
+         if _OPTIONS["with-bullet"] then
+            defines { 'ENABLE_BULLET' }
+            includedirs { "./../../extlibs/bullet/bullet-2.79/src" }
+            libdirs { "./../../extlibs/bullet/bullet-2.79/src/BulletDynamics"
+                    , "./../../extlibs/bullet/bullet-2.79/src/BulletCollision" 
+                    , "./../../extlibs/bullet/bullet-2.79/src/LinearMath" } 
+            links { "BulletDynamics", "BulletCollision", "LinearMath" }
+         end
 
       configuration { "macosx", "xcode4" }
          includedirs {
@@ -61,15 +68,21 @@ solution "MMDTestSolution"
       -- Linux specific
       configuration { "linux", "gmake" }
          defines { '_LARGEFILE_SOURCE', '_FILE_OFFSET_BITS=64' }
+
+         -- GLM replacement for glu
          if _OPTIONS["with-glm"] then
             defines { 'ENABLE_GLM' }
          end
-         -- defines { 'ENABLE_BULLET' }
-         -- includedirs { "./extlibs/bullet/bullet3/src" }
-         -- libdirs { "./extlibs/bullet/bullet3/src/BulletDynamics"
-         --         , "./extlibs/bullet/bullet3/src/BulletCollision" 
-         --         , "./extlibs/bullet/bullet3/src/LinearMath" } 
-         -- links { "BulletDynamics", "BulletCollision", "LinearMath" }
+
+         -- Bullet physics
+         if _OPTIONS["with-bullet"] then
+            defines { 'ENABLE_BULLET' }
+            includedirs { "./extlibs/bullet/bullet3/src" }
+            libdirs { "./extlibs/bullet/bullet3/src/BulletDynamics"
+                    , "./extlibs/bullet/bullet3/src/BulletCollision" 
+                    , "./extlibs/bullet/bullet3/src/LinearMath" } 
+            links { "BulletDynamics", "BulletCollision", "LinearMath" }
+         end
          links { "GL", "glut" }
 
       configuration "Debug"

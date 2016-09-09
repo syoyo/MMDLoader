@@ -70,6 +70,7 @@ static bool draw_ik = false;
 static bool draw_mesh = true;
 static bool draw_bbox = false;
 static bool draw_bones = true;
+static bool draw_wireframe = false;
 
 PMDModel *model = NULL;
 VMDAnimation *anim = NULL;
@@ -618,18 +619,25 @@ static void DrawMesh() {
   glDisable(GL_LIGHTING);
   glEnable(GL_DEPTH_TEST);
   glBegin(GL_TRIANGLES);
-  for (int i = 0; i < model->indices_.size(); i++) {
-    int idx = model->indices_[i];
+  int face_count = model->indices_.size() / 3;
+  for (int i = 0; i < face_count; i++) {
+    int idx0 = model->indices_[3 * i + 0];
+    int idx1 = model->indices_[3 * i + 2];
+    int idx2 = model->indices_[3 * i + 1];
     // printf("v[%d] = %f, %f, %f\n",
     //  i,
     //  renderVertices[3*idx+0],
     //  renderVertices[3*idx+1],
     //  renderVertices[3*idx+2]);
-    int cidx = model->vertices_[idx].bone[0] % 7;
+    int cidx = model->vertices_[idx0].bone[0] % 7;
     // printf("cidx = %d\n", cidx);
     glColor3f(collist[cidx][0], collist[cidx][1], collist[cidx][2]);
-    glVertex3f(renderVertices[3 * idx + 0], renderVertices[3 * idx + 1],
-               -renderVertices[3 * idx + 2]);
+    glVertex3f(renderVertices[3 * idx0 + 0], renderVertices[3 * idx0 + 1],
+               -renderVertices[3 * idx0 + 2]);
+    glVertex3f(renderVertices[3 * idx1 + 0], renderVertices[3 * idx1 + 1],
+               -renderVertices[3 * idx1 + 2]);
+    glVertex3f(renderVertices[3 * idx2 + 0], renderVertices[3 * idx2 + 1],
+               -renderVertices[3 * idx2 + 2]);
     // glVertex3f(model->vertices_[idx].pos[0],
     //           model->vertices_[idx].pos[1],
     //           -model->vertices_[idx].pos[2]);
@@ -1047,6 +1055,16 @@ void keyboard(unsigned char k, int x, int y) {
   case 'z':
     draw_bones = !draw_bones;
     break;
+  case 'w':
+    draw_wireframe = !draw_wireframe;
+    if(draw_wireframe) {
+      glPolygonMode(GL_FRONT, GL_LINE);
+      glPolygonMode(GL_BACK, GL_LINE);
+    } else {
+      glPolygonMode(GL_FRONT, GL_FILL);
+      glPolygonMode(GL_BACK, GL_FILL);
+    }
+    break;
   case ' ': /* space */
     /* reset view */
     trackball(curr_quat, 0.0, 0.0, 0.0, 0.0);
@@ -1107,6 +1125,9 @@ void init() {
   view_tgt[0] = view_tgt[1] = view_tgt[2] = 0.0;
 
   trackball(curr_quat, 0.0, 0.0, 0.0, 0.0);
+
+  glCullFace(GL_BACK);
+  glEnable(GL_CULL_FACE);
 
   glEnable(GL_LIGHTING);
   glEnable(GL_LIGHT0);
