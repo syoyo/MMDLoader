@@ -62,7 +62,7 @@ solution "MMDTestSolution"
       configuration { "linux", "gmake" }
          defines { '_LARGEFILE_SOURCE', '_FILE_OFFSET_BITS=64' }
          if _OPTIONS["with-glm"] then
-             defines { 'ENABLE_GLM' }
+            defines { 'ENABLE_GLM' }
          end
          -- defines { 'ENABLE_BULLET' }
          -- includedirs { "./extlibs/bullet/bullet3/src" }

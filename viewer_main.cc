@@ -220,12 +220,12 @@ static void CalculateBboxMinMax() {
   memset(model->boneBboxMinMax_, 0, sizeof(float) * (3 * 2 * model->bones_.size()));
   memset(model->boneBboxVertices_, 0, sizeof(float) * (3 * 8 * model->bones_.size()));
   for (int i = 0; i < model->bones_.size(); i++) {
-      model->boneBboxMinMax_[3 * (2 * i + 0) + 0] = -LARGE_NUMBER;
-      model->boneBboxMinMax_[3 * (2 * i + 0) + 1] = -LARGE_NUMBER;
-      model->boneBboxMinMax_[3 * (2 * i + 0) + 2] = -LARGE_NUMBER;
-      model->boneBboxMinMax_[3 * (2 * i + 1) + 0] =  LARGE_NUMBER;
-      model->boneBboxMinMax_[3 * (2 * i + 1) + 1] =  LARGE_NUMBER;
-      model->boneBboxMinMax_[3 * (2 * i + 1) + 2] =  LARGE_NUMBER;
+    model->boneBboxMinMax_[3 * (2 * i + 0) + 0] = -LARGE_NUMBER;
+    model->boneBboxMinMax_[3 * (2 * i + 0) + 1] = -LARGE_NUMBER;
+    model->boneBboxMinMax_[3 * (2 * i + 0) + 2] = -LARGE_NUMBER;
+    model->boneBboxMinMax_[3 * (2 * i + 1) + 0] =  LARGE_NUMBER;
+    model->boneBboxMinMax_[3 * (2 * i + 1) + 1] =  LARGE_NUMBER;
+    model->boneBboxMinMax_[3 * (2 * i + 1) + 2] =  LARGE_NUMBER;
   }
   for (int j = 0; j < model->vertices_.size(); j++) {
     PMDVertex &pv = model->vertices_[j];
@@ -819,6 +819,7 @@ static void DrawBone() {
       glEnd();
     }
   }
+  glEnable(GL_LIGHTING);
 }
 
 static void DrawIK() {
