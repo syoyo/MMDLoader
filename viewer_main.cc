@@ -219,16 +219,16 @@ static double BezierEval(unsigned char *ip, float t) {
 static void CalculateBboxMinMax() {
   memset(model->boneBboxMinMax_, 0, sizeof(float) * (3 * 2 * model->bones_.size()));
   memset(model->boneBboxVertices_, 0, sizeof(float) * (3 * 8 * model->bones_.size()));
-  for (int p = 0; p < model->bones_.size(); p++) {
-      model->boneBboxMinMax_[3 * (2 * p + 0) + 0] = -LARGE_NUMBER;
-      model->boneBboxMinMax_[3 * (2 * p + 0) + 1] = -LARGE_NUMBER;
-      model->boneBboxMinMax_[3 * (2 * p + 0) + 2] = -LARGE_NUMBER;
-      model->boneBboxMinMax_[3 * (2 * p + 1) + 0] =  LARGE_NUMBER;
-      model->boneBboxMinMax_[3 * (2 * p + 1) + 1] =  LARGE_NUMBER;
-      model->boneBboxMinMax_[3 * (2 * p + 1) + 2] =  LARGE_NUMBER;
+  for (int i = 0; i < model->bones_.size(); i++) {
+      model->boneBboxMinMax_[3 * (2 * i + 0) + 0] = -LARGE_NUMBER;
+      model->boneBboxMinMax_[3 * (2 * i + 0) + 1] = -LARGE_NUMBER;
+      model->boneBboxMinMax_[3 * (2 * i + 0) + 2] = -LARGE_NUMBER;
+      model->boneBboxMinMax_[3 * (2 * i + 1) + 0] =  LARGE_NUMBER;
+      model->boneBboxMinMax_[3 * (2 * i + 1) + 1] =  LARGE_NUMBER;
+      model->boneBboxMinMax_[3 * (2 * i + 1) + 2] =  LARGE_NUMBER;
   }
-  for (int q = 0; q < model->vertices_.size(); q++) {
-    PMDVertex &pv = model->vertices_[q];
+  for (int j = 0; j < model->vertices_.size(); j++) {
+    PMDVertex &pv = model->vertices_[j];
     Vector3 p0;
     p0.x = pv.pos[0];
     p0.y = pv.pos[1];
@@ -254,8 +254,8 @@ static void CalculateBboxMinMax() {
     model->boneBboxMinMax_[3 * (2 * b0 + 1) + 1] = BboxMinMax[1].y;
     model->boneBboxMinMax_[3 * (2 * b0 + 1) + 2] = BboxMinMax[1].z;
   }
-  for (int r = 0; r < model->vertices_.size(); r++) {
-    PMDVertex &pv = model->vertices_[r];
+  for (int k = 0; k < model->vertices_.size(); k++) {
+    PMDVertex &pv = model->vertices_[k];
     unsigned short b0 = pv.bone[0];
 
     Vector3 BboxMinMax[2];
@@ -348,28 +348,28 @@ static void VertexTransform(float *vbuffer, float *vbufferBbox) {
     // vbuffer[3*i+2] = p.z;
   }
   for (int j = 0; j < model->bones_.size(); j++) {
-      for (int k = 0; k < 8; k++) {
-          Vector3 p0;
-          p0.x = model->boneBboxVertices_[3 * (8 * j + k) + 0];
-          p0.y = model->boneBboxVertices_[3 * (8 * j + k) + 1];
-          p0.z = model->boneBboxVertices_[3 * (8 * j + k) + 2];
+    for (int k = 0; k < 8; k++) {
+      Vector3 p0;
+      p0.x = model->boneBboxVertices_[3 * (8 * j + k) + 0];
+      p0.y = model->boneBboxVertices_[3 * (8 * j + k) + 1];
+      p0.z = model->boneBboxVertices_[3 * (8 * j + k) + 2];
 
-          float *m0 = model->bones_[j].matrix;
+      float *m0 = model->bones_[j].matrix;
 
-          Vector3 v0;
+      Vector3 v0;
 
-          // Bone matrix is defined in absolute coordinate.
-          // Pass a vertex in relative coordinate to bone matrix.
-          p0.x -= model->bones_[j].pos[0];
-          p0.y -= model->bones_[j].pos[1];
-          p0.z -= model->bones_[j].pos[2];
+      // Bone matrix is defined in absolute coordinate.
+      // Pass a vertex in relative coordinate to bone matrix.
+      p0.x -= model->bones_[j].pos[0];
+      p0.y -= model->bones_[j].pos[1];
+      p0.z -= model->bones_[j].pos[2];
 
-          MatVMul(v0, m0, p0);
+      MatVMul(v0, m0, p0);
 
-          vbufferBbox[3 * (8 * j + k) + 0] = v0.x;
-          vbufferBbox[3 * (8 * j + k) + 1] = v0.y;
-          vbufferBbox[3 * (8 * j + k) + 2] = v0.z;
-      }
+      vbufferBbox[3 * (8 * j + k) + 0] = v0.x;
+      vbufferBbox[3 * (8 * j + k) + 1] = v0.y;
+      vbufferBbox[3 * (8 * j + k) + 2] = v0.z;
+    }
   }
 }
 
@@ -787,6 +787,8 @@ static void DrawBoneOriginal() {
   glEnable(GL_LIGHTING);
 }
 
+static void DrawAxis();
+
 static void DrawBone() {
   glDisable(GL_LIGHTING);
   glLineWidth(3);
@@ -817,7 +819,6 @@ static void DrawBone() {
       glEnd();
     }
   }
-  glEnable(GL_LIGHTING);
 }
 
 static void DrawIK() {
