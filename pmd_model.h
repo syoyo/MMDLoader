@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <string>
+#include <mmd_math.h>
 
 //
 // PMD format:
@@ -120,6 +121,10 @@ struct Bone {
 
   bool isLeg;
   bool updated;
+
+  Vector3 min;
+  Vector3 max;
+  Vector3 dim;
 };
 
 struct IK {
@@ -140,7 +145,7 @@ struct Morph {
 
 class PMDModel {
 public:
-  PMDModel() : boneBboxMinMax_(NULL), boneBboxVertices_(NULL) {};
+  PMDModel() {};
   ~PMDModel() {};
 
   std::vector<PMDVertex> vertices_;
@@ -153,9 +158,6 @@ public:
   std::string name_;
   std::string comment_;
   float version_;
-
-  float* boneBboxMinMax_;
-  float* boneBboxVertices_;
 };
 
 } // namespace
