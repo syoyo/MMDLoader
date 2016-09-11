@@ -52,7 +52,7 @@ solution "MMDTestSolution"
 
       -- Euler camera
       if _OPTIONS["with-euler-camera"] then
-         defines { 'ENABLE_EULER_CAMERA' }
+         defines { 'ENABLE_GLM', 'ENABLE_EULER_CAMERA' }
       end
 
       -- MacOSX. Guess we use gcc.
