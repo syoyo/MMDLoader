@@ -138,14 +138,14 @@ static glm::vec3 OrientToOffset(glm::vec3 orient) {
 }
 
 static void UpdateCameraParams() {
-  glm::vec3 view_target(scene->center.x, scene->center.y, scene->center.z);
+  glm::vec3 view_target(scene->static_center.x, scene->static_center.y, scene->static_center.z);
   glm::vec3 view_origin = view_target+OrientToOffset(orient)*orbit_radius;
   view_org[0] = view_origin.x;
   view_org[1] = view_origin.y;
   view_org[2] = view_origin.z;
-  view_tgt[0] = scene->center.x;
-  view_tgt[1] = scene->center.y;
-  view_tgt[2] = scene->center.z;
+  view_tgt[0] = scene->static_center.x;
+  view_tgt[1] = scene->static_center.y;
+  view_tgt[2] = scene->static_center.z;
 }
 #endif
 
@@ -261,6 +261,7 @@ static double BezierEval(unsigned char *ip, float t) {
 }
 
 static void CalculateBboxMinMax() {
+  // calculate bones bbox
   for (int i = 0; i < model->bones_.size(); i++) {
     model->bones_[i].min.x =  LARGE_NUMBER;
     model->bones_[i].min.y =  LARGE_NUMBER;
@@ -283,21 +284,23 @@ static void CalculateBboxMinMax() {
     model->bones_[b0].max.y = std::max(model->bones_[b0].max.y, p0.y);
     model->bones_[b0].max.z = std::max(model->bones_[b0].max.z, p0.z);
   }
-  scene->min.x =  LARGE_NUMBER;
-  scene->min.y =  LARGE_NUMBER;
-  scene->min.z =  LARGE_NUMBER;
-  scene->max.x = -LARGE_NUMBER;
-  scene->max.y = -LARGE_NUMBER;
-  scene->max.z = -LARGE_NUMBER;
+
+  // calculate static scene bbox
+  scene->static_min.x =  LARGE_NUMBER;
+  scene->static_min.y =  LARGE_NUMBER;
+  scene->static_min.z =  LARGE_NUMBER;
+  scene->static_max.x = -LARGE_NUMBER;
+  scene->static_max.y = -LARGE_NUMBER;
+  scene->static_max.z = -LARGE_NUMBER;
   for (int k = 0; k < model->bones_.size(); k++) {
     VSub(model->bones_[k].dim, model->bones_[k].max, model->bones_[k].min);
 
-    scene->min.x = std::min(scene->min.x, model->bones_[k].min.x);
-    scene->min.y = std::min(scene->min.y, model->bones_[k].min.y);
-    scene->min.z = std::min(scene->min.z, model->bones_[k].min.z);
-    scene->max.x = std::max(scene->max.x, model->bones_[k].max.x);
-    scene->max.y = std::max(scene->max.y, model->bones_[k].max.y);
-    scene->max.z = std::max(scene->max.z, model->bones_[k].max.z);
+    scene->static_min.x = std::min(scene->static_min.x, model->bones_[k].min.x);
+    scene->static_min.y = std::min(scene->static_min.y, model->bones_[k].min.y);
+    scene->static_min.z = std::min(scene->static_min.z, model->bones_[k].min.z);
+    scene->static_max.x = std::max(scene->static_max.x, model->bones_[k].max.x);
+    scene->static_max.y = std::max(scene->static_max.y, model->bones_[k].max.y);
+    scene->static_max.z = std::max(scene->static_max.z, model->bones_[k].max.z);
 
     Vector3 axis;
     axis.x = model->bones_[k].pos[0];
@@ -305,13 +308,14 @@ static void CalculateBboxMinMax() {
     axis.z = model->bones_[k].pos[2];
 
     // Bone matrix is defined in absolute coordinate.
-    // Pass vertex min/max in relative coordinate to bone matrix.
+    // Pass vertex static_min/static_max in relative coordinate to bone matrix.
     VSub(model->bones_[k].max, model->bones_[k].max, axis);
     VSub(model->bones_[k].min, model->bones_[k].min, axis);
   }
-  scene->center.x = (scene->min.x + scene->max.x) * 0.5;
-  scene->center.y = (scene->min.y + scene->max.y) * 0.5;
-  scene->center.z = (scene->min.z + scene->max.z) * 0.5;
+  VSub(scene->static_dim, scene->static_max, scene->static_min);
+  scene->static_center.x = (scene->static_min.x + scene->static_max.x) * 0.5;
+  scene->static_center.y = (scene->static_min.y + scene->static_max.y) * 0.5;
+  scene->static_center.z = (scene->static_min.z + scene->static_max.z) * 0.5;
 }
 
 static void VertexTransform(float *vbuffer) {
@@ -361,6 +365,23 @@ static void VertexTransform(float *vbuffer) {
     // vbuffer[3*i+1] = p.y;
     // vbuffer[3*i+2] = p.z;
   }
+
+  // calculate dynamic scene bbox
+  scene->dynamic_min.x =  LARGE_NUMBER;
+  scene->dynamic_min.y =  LARGE_NUMBER;
+  scene->dynamic_min.z =  LARGE_NUMBER;
+  scene->dynamic_max.x = -LARGE_NUMBER;
+  scene->dynamic_max.y = -LARGE_NUMBER;
+  scene->dynamic_max.z = -LARGE_NUMBER;
+  for (int j = 0; j < model->vertices_.size(); j++) {
+    scene->dynamic_min.x = std::min(scene->dynamic_min.x, vbuffer[3 * j + 0]);
+    scene->dynamic_min.y = std::min(scene->dynamic_min.y, vbuffer[3 * j + 1]);
+    scene->dynamic_min.z = std::min(scene->dynamic_min.z, vbuffer[3 * j + 2]);
+    scene->dynamic_max.x = std::max(scene->dynamic_max.x, vbuffer[3 * j + 0]);
+    scene->dynamic_max.y = std::max(scene->dynamic_max.y, vbuffer[3 * j + 1]);
+    scene->dynamic_max.z = std::max(scene->dynamic_max.z, vbuffer[3 * j + 2]);
+  }
+  VSub(scene->dynamic_dim, scene->dynamic_max, scene->dynamic_min);
 }
 
 struct MotionSegment {
@@ -874,8 +895,8 @@ static void DrawBboxAxis() {
   glEnable(GL_NORMALIZE);
   glDisable(GL_LIGHTING);
   glEnable(GL_DEPTH_TEST);
-  for (int p = 0; p < model->bones_.size(); p++) {
-    Bone &b = model->bones_[p];
+  for (int i = 0; i < model->bones_.size(); i++) {
+    Bone &b = model->bones_[i];
     glPushMatrix();
     glScalef(1, 1, -1);
     glMultMatrixf(b.matrix);
@@ -891,19 +912,36 @@ static void DrawBbox() {
   glEnable(GL_NORMALIZE);
   glDisable(GL_LIGHTING);
   glEnable(GL_DEPTH_TEST);
-  for (int q = 0; q < model->bones_.size(); q++) {
-    Bone &b = model->bones_[q];
+  for (int i = 0; i < model->bones_.size(); i++) {
+    Bone &b = model->bones_[i];
     glPushMatrix();
     glScalef(1, 1, -1);
     glMultMatrixf(b.matrix);
     glTranslatef(b.min.x, b.min.y, b.min.z);
     glScalef(b.dim.x, b.dim.y, b.dim.z);
     glTranslatef(0.5, 0.5, 0.5);
-    int cidx = q % 7;
+    int cidx = i % 7;
     glColor3f(collist[cidx][0], collist[cidx][1], collist[cidx][2]);
     glutWireCube(1);
     glPopMatrix();
   }
+  glDisable(GL_DEPTH_TEST);
+  glEnable(GL_LIGHTING);
+  glDisable(GL_NORMALIZE);
+}
+
+static void DrawSceneBbox() {
+  glEnable(GL_NORMALIZE);
+  glDisable(GL_LIGHTING);
+  glEnable(GL_DEPTH_TEST);
+  glPushMatrix();
+  glScalef(1, 1, -1);
+  glTranslatef(scene->dynamic_min.x, scene->dynamic_min.y, scene->dynamic_min.z);
+  glScalef(scene->dynamic_dim.x, scene->dynamic_dim.y, scene->dynamic_dim.z);
+  glTranslatef(0.5, 0.5, 0.5);
+  glColor3f(1, 1, 1);
+  glutWireCube(1);
+  glPopMatrix();
   glDisable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
   glDisable(GL_NORMALIZE);
@@ -941,9 +979,10 @@ void display() {
             view_tgt[2], 0, 1, 0); /* Y up */
 #endif
 
-#if ! (defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA))
+#if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
+  DrawSceneBbox();
+#else
   glMultMatrixf(&(m[0][0]));
-#endif
 
   // draw scene bounding box
   glPushMatrix();
@@ -952,7 +991,6 @@ void display() {
   glutWireCube(2.0 / scenesize);
   glPopMatrix();
 
-#if ! (defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA))
   glScalef(1.0 / scenesize, 1.0 / scenesize, 1.0 / scenesize);
 #endif
 
@@ -1236,7 +1274,7 @@ void init() {
 #if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
   prev_orient = orient = glm::vec3(0);
   orbit_radius = prev_orbit_radius =
-      (scene->max.y - scene->min.y) * 0.5 * (1 / tan(glm::radians(view_fov * 0.5)));
+      (scene->static_max.y - scene->static_min.y) * 0.5 * (1 / tan(glm::radians(view_fov * 0.5)));
   UpdateCameraParams();
 #else
   view_org[0] = view_org[1] = 0.0;
