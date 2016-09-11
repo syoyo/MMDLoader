@@ -151,10 +151,11 @@ static bool ParseIK(PMDModel *model, FILE *fp) {
 PMDReader::PMDReader() {
   size_t n = sizeof(sjis_table)/sizeof(sjis_table_rec_t);
   for(int i = 0; i < n; i++) {
-    wchar_t* unicode_name = (wchar_t*)sjis_table[i].unicode_name;
-    char* ascii_name = sjis_table[i].ascii_name;
-    wchar_t* sjis_name = (wchar_t*)sjis_table[i].sjis_name;
-    printf("unicode_name: %ls, ascii_name: %s, sjis_name: %ls\n", unicode_name, ascii_name, sjis_name);
+    // DBG
+    // wchar_t* unicode_name = (wchar_t*)sjis_table[i].unicode_name;
+    // char* ascii_name = sjis_table[i].ascii_name;
+    // wchar_t* sjis_name = (wchar_t*)sjis_table[i].sjis_name;
+    // printf("unicode_name: %ls, ascii_name: %s, sjis_name: %ls\n", unicode_name, ascii_name, sjis_name);
     sjis_map.insert(sjis_map_t::value_type(sjis_table[i].sjis_name, &sjis_table[i]));
   }
 }
