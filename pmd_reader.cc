@@ -1,10 +1,29 @@
 #include <cassert>
 #include <cstring> // memcpy
 #include <cstdio>
+#include <map>
+#include <string>
 
 #include "pmd_reader.h"
 
+#define MAX_BUF_LEN 20
+
+struct sjis_table_rec_t
+{
+  char unicode_name[MAX_BUF_LEN];
+  char ascii_name[MAX_BUF_LEN];
+  char sjis_name[MAX_BUF_LEN];
+};
+
 using namespace mmd;
+
+sjis_table_rec_t sjis_table[] = {
+    {"左ひざ", "knee_L", {0x8d, 0xB6, 0x82, 0xd0, 0x82, 0xb4, 0x00}},
+    {"右ひざ", "knee_R", {0x89, 0x45, 0x82, 0xd0, 0x82, 0xb4, 0x00}}
+    };
+
+typedef std::map<std::string, sjis_table_rec_t*> sjis_map_t;
+sjis_map_t sjis_map;
 
 //
 //
@@ -67,6 +86,13 @@ static bool ParseBone(PMDModel *model, FILE *fp) {
       bone.isLeg = false;
     }
 
+    sjis_map_t::iterator p = sjis_map.find(buf);
+    if (p != sjis_map.end()) {
+      bone.ascii_name = (*p).second->ascii_name;
+    } else {
+      bone.ascii_name = "n/a";
+    }
+
     model->bones_.push_back(bone);
   }
 
@@ -122,7 +148,16 @@ static bool ParseIK(PMDModel *model, FILE *fp) {
 //
 //
 
-PMDReader::PMDReader() {}
+PMDReader::PMDReader() {
+  size_t n = sizeof(sjis_table)/sizeof(sjis_table_rec_t);
+  for(int i = 0; i < n; i++) {
+    wchar_t* unicode_name = (wchar_t*)sjis_table[i].unicode_name;
+    char* ascii_name = sjis_table[i].ascii_name;
+    wchar_t* sjis_name = (wchar_t*)sjis_table[i].sjis_name;
+    printf("unicode_name: %ls, ascii_name: %s, sjis_name: %ls\n", unicode_name, ascii_name, sjis_name);
+    sjis_map.insert(sjis_map_t::value_type(sjis_table[i].sjis_name, &sjis_table[i]));
+  }
+}
 
 PMDReader::~PMDReader() {}
 

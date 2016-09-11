@@ -104,6 +104,7 @@ struct Bone {
   ~Bone() {};
 
   std::string name;
+  std::string ascii_name;
   unsigned short parentIndex;
   unsigned short tailIndex;
   unsigned char type;

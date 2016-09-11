@@ -978,8 +978,7 @@ static void PrintBoneInfo() {
     glColor3f(collist[cidx][0], collist[cidx][1], collist[cidx][2]);
     glRasterPos2f(0, 0);
     static char buf[MAX_BUF_LEN];
-    //sprintf(buf, "#%d: %s", i, b.name.c_str());
-    sprintf(buf, "#%d: %s", i, "n/a");
+    sprintf(buf, "#%d: %s", i, b.ascii_name.c_str());
     PrintBitmapString(GLUT_BITMAP_TIMES_ROMAN_10, buf);
     glPopMatrix();
   }
