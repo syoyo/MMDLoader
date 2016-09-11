@@ -35,6 +35,19 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+
+#ifdef ENABLE_EULER_CAMERA
+#include <glm/gtx/vector_angle.hpp>
+
+#if GLM_VERSION >= 96
+    // glm::rotate changed from degrees to radians in GLM 0.9.6
+    // https://glm.g-truc.net/0.9.6/updates.html
+    #define GLM_ROTATE(m, a, v) glm::rotate((m), glm::radians(a), (v))
+#else
+    #define GLM_ROTATE(m, a, v) glm::rotate((m), (a), (v))
+#endif
+#endif
+
 #endif
 
 using namespace mmd;
@@ -42,6 +55,19 @@ using namespace mmd;
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
 #define LARGE_NUMBER 1000000
+
+#if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
+#define ORIENT_ROLL(v)  v[0]
+#define ORIENT_PITCH(v) v[1]
+#define ORIENT_YAW(v)   v[2]
+
+#define VEC_LEFT    glm::vec3(1, 0, 0)
+#define VEC_UP      glm::vec3(0, 1, 0)
+#define VEC_FORWARD glm::vec3(0, 0, 1)
+
+#define MAX_PITCH  89.999
+#define MIN_PITCH -89.999
+#endif
 
 /*
  * global variable
@@ -57,6 +83,7 @@ static int mouse_r_pressed;  /* Is right mouse pressed?	*/
 static int mouse_m_pressed;  /* Is middle mouse pressed?	*/
 static GLfloat view_org[3];  /* view origin			*/
 static GLfloat view_tgt[3];  /* view target			*/
+static GLfloat view_fov = 45.0f;
 static float bmin[3] = {-1, -1, -1}, bmax[3] = {1, 1, 1};
 static float center[3] = {0.0, 0.0, 0.0};
 static float maxval;
@@ -64,6 +91,14 @@ static float scenesize = 20.0f;
 static int current_frame = 0;
 static int sub_frame = 0;
 static int frame_step = 1; // less = faster playback.
+
+#if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
+bool left_mouse_down = false, right_mouse_down = false;
+glm::vec2 prev_mouse_coord, mouse_drag;
+glm::vec3 prev_orient, orient, orbit_speed = glm::vec3(0, -0.5, -0.5);
+float prev_orbit_radius = 0, orbit_radius = 3, dolly_speed = 0.1;
+#endif
+
 static bool do_animate = true;
 static bool draw_axis = false;
 static bool draw_ik = false;
@@ -90,6 +125,29 @@ float collist[7][3] = {
     {0.0, 1.0, 1.0},
     {1.0, 1.0, 1.0},
 };
+
+#if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
+static glm::vec3 OrientToOffset(glm::vec3 orient) {
+    glm::mat4 pitch = GLM_ROTATE(
+            glm::mat4(1),
+            ORIENT_PITCH(orient), VEC_LEFT);
+    glm::mat4 yaw = GLM_ROTATE(
+            glm::mat4(1),
+            ORIENT_YAW(orient), VEC_UP);
+    return glm::vec3(yaw*pitch*glm::vec4(VEC_FORWARD, 1));
+}
+
+static void UpdateCameraParams() {
+  glm::vec3 view_target(scene->center.x, scene->center.y, scene->center.z);
+  glm::vec3 view_origin = view_target+OrientToOffset(orient)*orbit_radius;
+  view_org[0] = view_origin.x;
+  view_org[1] = view_origin.y;
+  view_org[2] = view_origin.z;
+  view_tgt[0] = scene->center.x;
+  view_tgt[1] = scene->center.y;
+  view_tgt[2] = scene->center.z;
+}
+#endif
 
 static inline void MyQSlerp(Quaternion &p, const Quaternion &q,
                             const Quaternion &r, double t) {
@@ -225,19 +283,35 @@ static void CalculateBboxMinMax() {
     model->bones_[b0].max.y = std::max(model->bones_[b0].max.y, p0.y);
     model->bones_[b0].max.z = std::max(model->bones_[b0].max.z, p0.z);
   }
-  for (int p = 0; p < model->bones_.size(); p++) {
-    VSub(model->bones_[p].dim, model->bones_[p].max, model->bones_[p].min);
+  scene->min.x =  LARGE_NUMBER;
+  scene->min.y =  LARGE_NUMBER;
+  scene->min.z =  LARGE_NUMBER;
+  scene->max.x = -LARGE_NUMBER;
+  scene->max.y = -LARGE_NUMBER;
+  scene->max.z = -LARGE_NUMBER;
+  for (int k = 0; k < model->bones_.size(); k++) {
+    VSub(model->bones_[k].dim, model->bones_[k].max, model->bones_[k].min);
+
+    scene->min.x = std::min(scene->min.x, model->bones_[k].min.x);
+    scene->min.y = std::min(scene->min.y, model->bones_[k].min.y);
+    scene->min.z = std::min(scene->min.z, model->bones_[k].min.z);
+    scene->max.x = std::max(scene->max.x, model->bones_[k].max.x);
+    scene->max.y = std::max(scene->max.y, model->bones_[k].max.y);
+    scene->max.z = std::max(scene->max.z, model->bones_[k].max.z);
 
     Vector3 axis;
-    axis.x = model->bones_[p].pos[0];
-    axis.y = model->bones_[p].pos[1];
-    axis.z = model->bones_[p].pos[2];
+    axis.x = model->bones_[k].pos[0];
+    axis.y = model->bones_[k].pos[1];
+    axis.z = model->bones_[k].pos[2];
 
     // Bone matrix is defined in absolute coordinate.
     // Pass vertex min/max in relative coordinate to bone matrix.
-    VSub(model->bones_[p].max, model->bones_[p].max, axis);
-    VSub(model->bones_[p].min, model->bones_[p].min, axis);
+    VSub(model->bones_[k].max, model->bones_[k].max, axis);
+    VSub(model->bones_[k].min, model->bones_[k].min, axis);
   }
+  scene->center.x = (scene->min.x + scene->max.x) * 0.5;
+  scene->center.y = (scene->min.y + scene->max.y) * 0.5;
+  scene->center.z = (scene->min.z + scene->max.z) * 0.5;
 }
 
 static void VertexTransform(float *vbuffer) {
@@ -846,8 +920,10 @@ void display() {
   glClearColor(0.0, 0.0, 0.0, 0.0);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+#if ! (defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA))
   /* get rotation matrix */
   build_rot_matrix(m);
+#endif
 
   // set_orthoview_pass(width, height);
 
@@ -865,7 +941,9 @@ void display() {
             view_tgt[2], 0, 1, 0); /* Y up */
 #endif
 
+#if ! (defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA))
   glMultMatrixf(&(m[0][0]));
+#endif
 
   // draw scene bounding box
   glPushMatrix();
@@ -874,7 +952,9 @@ void display() {
   glutWireCube(2.0 / scenesize);
   glPopMatrix();
 
+#if ! (defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA))
   glScalef(1.0 / scenesize, 1.0 / scenesize, 1.0 / scenesize);
+#endif
 
   Update();
 
@@ -909,11 +989,11 @@ void reshape(int w, int h) {
   glViewport(0, 0, w, h);
   glMatrixMode(GL_PROJECTION);
 #ifdef ENABLE_GLM
-  glm::mat4 projection = glm::perspective(45.0f, (float)w / (float)h, 0.1f, 50.0f);
+  glm::mat4 projection = glm::perspective(view_fov, (float)w / (float)h, 0.1f, 50.0f);
   glLoadMatrixf(glm::value_ptr(projection));
 #else
   glLoadIdentity();
-  gluPerspective(45.0f, (float)w / (float)h, 0.1f, 50.0f);
+  gluPerspective(view_fov, (float)w / (float)h, 0.1f, 50.0f);
 #endif
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
@@ -943,6 +1023,23 @@ void animate() {
 }
 
 void mouse(int button, int state, int x, int y) {
+#if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
+  if(state == GLUT_DOWN) {
+    prev_mouse_coord.x = x;
+    prev_mouse_coord.y = y;
+    if(button == GLUT_LEFT_BUTTON) {
+      left_mouse_down = true;
+      prev_orient = orient;
+    }
+    if(button == GLUT_RIGHT_BUTTON) {
+      right_mouse_down = true;
+      prev_orbit_radius = orbit_radius;
+    }
+  }
+  else {
+    left_mouse_down = right_mouse_down = false;
+  }
+#else
   int mod = glutGetModifiers();
   if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
     trackball(prev_quat, 0, 0, 0, 0); /* initialize */
@@ -993,11 +1090,33 @@ void mouse(int button, int state, int x, int y) {
     mouse_r_pressed = 0;
     mouse_moving = 0;
   }
+#endif
 
   glutPostRedisplay();
 }
 
 void motion(int x, int y) {
+#if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
+  if(left_mouse_down || right_mouse_down) {
+    mouse_drag = glm::vec2(x, y) - prev_mouse_coord;
+  }
+  if(left_mouse_down) {
+    orient = prev_orient+glm::vec3(0, mouse_drag.y*ORIENT_PITCH(orbit_speed), mouse_drag.x*ORIENT_YAW(orbit_speed));
+    if(ORIENT_PITCH(orient) > MAX_PITCH) ORIENT_PITCH(orient) = MAX_PITCH;
+    if(ORIENT_PITCH(orient) < MIN_PITCH) ORIENT_PITCH(orient) = MIN_PITCH;
+    if(ORIENT_YAW(orient) > 360)         ORIENT_YAW(orient) -= 360;
+    if(ORIENT_YAW(orient) < 0)           ORIENT_YAW(orient) += 360;
+  }
+  if(right_mouse_down) {
+    orbit_radius = prev_orbit_radius + mouse_drag.y*dolly_speed;
+    if(orbit_radius < 0) {
+        orbit_radius = 0;
+    }
+  }
+  if(left_mouse_down || right_mouse_down) {
+    UpdateCameraParams();
+  }
+#else
   float w = 1;
   float tmp[4];
 
@@ -1022,9 +1141,12 @@ void motion(int x, int y) {
 
     // glutIdleFunc(animate);
   }
+#endif
 
   glutPostRedisplay();
 }
+
+void init();
 
 void keyboard(unsigned char k, int x, int y) {
   bool redraw = false;
@@ -1059,22 +1181,13 @@ void keyboard(unsigned char k, int x, int y) {
     draw_wireframe = !draw_wireframe;
     if(draw_wireframe) {
       glPolygonMode(GL_FRONT, GL_LINE);
-      glPolygonMode(GL_BACK, GL_LINE);
     } else {
       glPolygonMode(GL_FRONT, GL_FILL);
-      glPolygonMode(GL_BACK, GL_FILL);
     }
     break;
   case ' ': /* space */
     /* reset view */
-    trackball(curr_quat, 0.0, 0.0, 0.0, 0.0);
-    mouse_moving = 0;
-    spinning = 0;
-    current_frame = 0;
-    sub_frame = 0;
-    view_org[0] = view_org[1] = 0.0;
-    view_org[2] = 5.0;
-    view_tgt[0] = view_tgt[1] = view_tgt[2] = 0.0;
+    init();
     break;
 
   default:
@@ -1095,7 +1208,7 @@ void load(char *pmdmodel, char *vmdmodel) {
   anim = vmdreader.LoadFromFile(vmdmodel);
   assert(anim);
 
-  MMDScene *scene = new MMDScene();
+  scene = new MMDScene();
   scene->SetModel(model);
   scene->AttachAnimation(anim);
 
@@ -1117,14 +1230,21 @@ void init() {
   spinning = 0;
   zoom = 1;
 
-  // current_frame = 0;
+  current_frame = 0;
   sub_frame = 0;
 
+#if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
+  prev_orient = orient = glm::vec3(0);
+  orbit_radius = prev_orbit_radius =
+      (scene->max.y - scene->min.y) * 0.5 * (1 / tan(glm::radians(view_fov * 0.5)));
+  UpdateCameraParams();
+#else
   view_org[0] = view_org[1] = 0.0;
   view_org[2] = 3.0;
   view_tgt[0] = view_tgt[1] = view_tgt[2] = 0.0;
 
   trackball(curr_quat, 0.0, 0.0, 0.0, 0.0);
+#endif
 
   glCullFace(GL_BACK);
   glEnable(GL_CULL_FACE);
@@ -1132,6 +1252,14 @@ void init() {
   glEnable(GL_LIGHTING);
   glEnable(GL_LIGHT0);
   glEnable(GL_DEPTH_TEST);
+
+  do_animate = true;
+  draw_axis = false;
+  draw_ik = false;
+  draw_mesh = true;
+  draw_bbox = false;
+  draw_bones = true;
+  draw_wireframe = false;
 }
 
 int main(int argc, char **argv) {

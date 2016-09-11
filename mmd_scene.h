@@ -20,6 +20,10 @@ public:
 
   void AttachAnimation(VMDAnimation *anim);
 
+  Vector3 min;
+  Vector3 max;
+  Vector3 center;
+
 private:
   PMDModel *model_;
   VMDAnimation *anim_;

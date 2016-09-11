@@ -8,6 +8,11 @@ newoption {
    description = "Build with Bullet physics"
 }
 
+newoption {
+   trigger = "with-euler-camera",
+   description = "Build with Euler camera"
+}
+
 sources = {
    "viewer_main.cc",
    "trackball.cpp"
@@ -40,6 +45,16 @@ solution "MMDTestSolution"
          "./"
       }
 
+      -- GLM replacement for glu
+      if _OPTIONS["with-glm"] then
+         defines { 'ENABLE_GLM' }
+      end
+
+      -- Euler camera
+      if _OPTIONS["with-euler-camera"] then
+         defines { 'ENABLE_EULER_CAMERA' }
+      end
+
       -- MacOSX. Guess we use gcc.
       configuration { "macosx", "gmake" }
          defines { '_LARGEFILE_SOURCE', '_FILE_OFFSET_BITS=64' }
@@ -68,11 +83,6 @@ solution "MMDTestSolution"
       -- Linux specific
       configuration { "linux", "gmake" }
          defines { '_LARGEFILE_SOURCE', '_FILE_OFFSET_BITS=64' }
-
-         -- GLM replacement for glu
-         if _OPTIONS["with-glm"] then
-            defines { 'ENABLE_GLM' }
-         end
 
          -- Bullet physics
          if _OPTIONS["with-bullet"] then
