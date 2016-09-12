@@ -69,6 +69,8 @@ using namespace mmd;
 #define MIN_PITCH -89.999
 #endif
 
+#define MAX_BUF_LEN 20
+
 /*
  * global variable
  */
@@ -106,6 +108,7 @@ static bool draw_mesh = true;
 static bool draw_bbox = false;
 static bool draw_bones = true;
 static bool draw_wireframe = false;
+static bool print_bone_info = false;
 
 PMDModel *model = NULL;
 VMDAnimation *anim = NULL;
@@ -128,13 +131,13 @@ float collist[7][3] = {
 
 #if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
 static glm::vec3 OrientToOffset(glm::vec3 orient) {
-    glm::mat4 pitch = GLM_ROTATE(
-            glm::mat4(1),
-            ORIENT_PITCH(orient), VEC_LEFT);
-    glm::mat4 yaw = GLM_ROTATE(
-            glm::mat4(1),
-            ORIENT_YAW(orient), VEC_UP);
-    return glm::vec3(yaw*pitch*glm::vec4(VEC_FORWARD, 1));
+  glm::mat4 pitch = GLM_ROTATE(
+      glm::mat4(1),
+      ORIENT_PITCH(orient), VEC_LEFT);
+  glm::mat4 yaw = GLM_ROTATE(
+      glm::mat4(1),
+      ORIENT_YAW(orient), VEC_UP);
+  return glm::vec3(yaw*pitch*glm::vec4(VEC_FORWARD, 1));
 }
 
 static void UpdateCameraParams() {
@@ -148,6 +151,15 @@ static void UpdateCameraParams() {
   view_tgt[2] = scene->static_center.z;
 }
 #endif
+
+static void PrintBitmapString(void* font, const char* s) {
+  if (s && strlen(s)) {
+    while (*s) {
+      glutBitmapCharacter(font, *s);
+      s++;
+    }
+  }
+}
 
 static inline void MyQSlerp(Quaternion &p, const Quaternion &q,
                             const Quaternion &r, double t) {
@@ -261,7 +273,7 @@ static double BezierEval(unsigned char *ip, float t) {
 }
 
 static void CalculateBboxMinMax() {
-  // calculate bones bbox
+  // calculate bone bbox
   for (int i = 0; i < model->bones_.size(); i++) {
     model->bones_[i].min.x =  LARGE_NUMBER;
     model->bones_[i].min.y =  LARGE_NUMBER;
@@ -710,9 +722,9 @@ static void Update() {
 }
 
 static void DrawMesh() {
-  glEnable(GL_NORMALIZE);
   glDisable(GL_LIGHTING);
   glEnable(GL_DEPTH_TEST);
+
   glBegin(GL_TRIANGLES);
   int face_count = model->indices_.size() / 3;
   for (int i = 0; i < face_count; i++) {
@@ -738,13 +750,14 @@ static void DrawMesh() {
     //           -model->vertices_[idx].pos[2]);
   }
   glEnd();
+
   glDisable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
-  glDisable(GL_NORMALIZE);
 }
 
 static void DrawBoneOriginal() {
   glDisable(GL_LIGHTING);
+  glDisable(GL_DEPTH_TEST);
   glLineWidth(3.0);
 
   for (int i = 0; i < model->bones_.size(); i++) {
@@ -776,11 +789,13 @@ static void DrawBoneOriginal() {
   }
 
   glLineWidth(1.0);
+  glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
 }
 
 static void DrawBone() {
   glDisable(GL_LIGHTING);
+  glDisable(GL_DEPTH_TEST);
   glLineWidth(3.0);
 
   for (int i = 0; i < model->bones_.size(); i++) {
@@ -812,11 +827,13 @@ static void DrawBone() {
   }
 
   glLineWidth(1.0);
+  glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
 }
 
 static void DrawIK() {
   glDisable(GL_LIGHTING);
+  glDisable(GL_DEPTH_TEST);
   glPointSize(5.0);
 
   for (int i = 0; i < model->iks_.size(); i++) {
@@ -861,6 +878,7 @@ static void DrawIK() {
   }
 
   glPointSize(1.0);
+  glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
 }
 
@@ -891,10 +909,10 @@ static void DrawAxis() {
   glEnable(GL_LIGHTING);
 }
 
-static void DrawBboxAxis() {
-  glEnable(GL_NORMALIZE);
+static void DrawBoneAxis() {
   glDisable(GL_LIGHTING);
-  glEnable(GL_DEPTH_TEST);
+  glDisable(GL_DEPTH_TEST);
+
   for (int i = 0; i < model->bones_.size(); i++) {
     Bone &b = model->bones_[i];
     glPushMatrix();
@@ -903,15 +921,15 @@ static void DrawBboxAxis() {
     DrawAxis();
     glPopMatrix();
   }
-  glDisable(GL_DEPTH_TEST);
+
+  glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
-  glDisable(GL_NORMALIZE);
 }
 
-static void DrawBbox() {
-  glEnable(GL_NORMALIZE);
+static void DrawBoneBbox() {
   glDisable(GL_LIGHTING);
-  glEnable(GL_DEPTH_TEST);
+  glDisable(GL_DEPTH_TEST);
+
   for (int i = 0; i < model->bones_.size(); i++) {
     Bone &b = model->bones_[i];
     glPushMatrix();
@@ -925,15 +943,15 @@ static void DrawBbox() {
     glutWireCube(1);
     glPopMatrix();
   }
-  glDisable(GL_DEPTH_TEST);
+
+  glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
-  glDisable(GL_NORMALIZE);
 }
 
 static void DrawSceneBbox() {
-  glEnable(GL_NORMALIZE);
   glDisable(GL_LIGHTING);
-  glEnable(GL_DEPTH_TEST);
+  glDisable(GL_DEPTH_TEST);
+
   glPushMatrix();
   glScalef(1, 1, -1);
   glTranslatef(scene->dynamic_min.x, scene->dynamic_min.y, scene->dynamic_min.z);
@@ -942,9 +960,34 @@ static void DrawSceneBbox() {
   glColor3f(1, 1, 1);
   glutWireCube(1);
   glPopMatrix();
-  glDisable(GL_DEPTH_TEST);
+
+  glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
-  glDisable(GL_NORMALIZE);
+}
+
+static void PrintBoneInfo() {
+  glDisable(GL_LIGHTING);
+  glDisable(GL_DEPTH_TEST);
+
+  for (int i = 0; i < model->bones_.size(); i++) {
+    Bone &b = model->bones_[i];
+    if(b.ascii_name.empty()) {
+      continue;
+    }
+    glPushMatrix();
+    glScalef(1, 1, -1);
+    glMultMatrixf(b.matrix);
+    int cidx = i % 7;
+    glColor3f(collist[cidx][0], collist[cidx][1], collist[cidx][2]);
+    glRasterPos2f(0, 0);
+    static char buf[MAX_BUF_LEN];
+    sprintf(buf, "%s", b.ascii_name.c_str());
+    PrintBitmapString(GLUT_BITMAP_TIMES_ROMAN_10, buf);
+    glPopMatrix();
+  }
+
+  glEnable(GL_DEPTH_TEST);
+  glEnable(GL_LIGHTING);
 }
 
 void build_rot_matrix(GLfloat m[4][4]) {
@@ -1000,7 +1043,7 @@ void display() {
 
   // overlay
   if(draw_axis) {
-    DrawBboxAxis();
+    DrawBoneAxis();
   }
 
   if(draw_ik) {
@@ -1012,7 +1055,11 @@ void display() {
   }
 
   if(draw_bbox) {
-    DrawBbox();
+    DrawBoneBbox();
+  }
+
+  if(print_bone_info) {
+    PrintBoneInfo();
   }
 
   if(draw_bones) {
@@ -1222,6 +1269,9 @@ void keyboard(unsigned char k, int x, int y) {
     } else {
       glPolygonMode(GL_FRONT, GL_FILL);
     }
+    break;
+  case 'n':
+    print_bone_info = !print_bone_info;
     break;
   case ' ': /* space */
     /* reset view */
