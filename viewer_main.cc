@@ -239,12 +239,12 @@ private:
 
 // http://stackoverflow.com/questions/14008295/how-to-implement-the-btidebugdraw-interface-of-bullet-in-opengl-4-0
 void GLDebugDrawer::drawLine(const btVector3& from, const btVector3& to, const btVector3& color) {
-    glBegin(GL_LINES);
-        glColor3f(color.getX(), color.getY(), color.getZ());
-        glVertex3d(from.getX(), from.getY(), from.getZ());
-        glColor3f(color.getX(), color.getY(), color.getZ());
-        glVertex3d(to.getX(), to.getY(), to.getZ());
-    glEnd();
+  glBegin(GL_LINES);
+    glColor3f(color.getX(), color.getY(), color.getZ());
+    glVertex3d(from.getX(), from.getY(), from.getZ());
+    glColor3f(color.getX(), color.getY(), color.getZ());
+    glVertex3d(to.getX(), to.getY(), to.getZ());
+  glEnd();
 }
 
 btBroadphaseInterface*               broadphase;
@@ -327,11 +327,11 @@ static void StepSimulation() {
     // this is not enough to move an object in bullet..
     fallRigidBody->getMotionState()->setWorldTransform(startTransform);
 
-    // required step to move something in bullet
+    // required step to move a rigid body in bullet
     // re-adding the rigid body to the world also works
     fallRigidBody->setMotionState(fallRigidBody->getMotionState());
 
-    // short-cut to moving relative position (undesired!)
+    // short-cut to moving "relative" position (undesired!)
     // fallRigidBody->translate(btVector3(0, fallHeight, 0));
 
     // required step to wake-up deactivated objects in bullet
