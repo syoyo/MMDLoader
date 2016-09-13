@@ -36,7 +36,7 @@ void MMDScene::AttachAnimation(VMDAnimation *anim) {
   for (int i = 0; i < anim->motions_.size(); i++) {
     VMDMotion &vmdMotion = anim->motions_[i];
     // bone_name[15] might not be null-terminated.
-    // So append '\0' to reconstrct a string.
+    // So append '\0' to reconstruct a string.
     char buf[16];
     memcpy(buf, vmdMotion.bone_name, 15);
     buf[15] = '\0';
@@ -73,6 +73,10 @@ void MMDScene::AttachAnimation(VMDAnimation *anim) {
       bone.motions = it->second;
     } else {
       printf("[MMD] Cannot find bone [ %s ] in PMD.\n", bone.name.c_str());
+      // DBG
+      for(int j = 0; j < bone.name.length(); j++) {
+        printf("[MMD] 0x%x\n", 0xFF & bone.name.c_str()[j]);
+      }
     }
   }
 

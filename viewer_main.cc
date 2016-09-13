@@ -109,6 +109,7 @@ static bool draw_bbox = false;
 static bool draw_bones = true;
 static bool draw_wireframe = false;
 static bool print_bone_info = false;
+static bool draw_bullet_scene = false;
 
 PMDModel *model = NULL;
 VMDAnimation *anim = NULL;
@@ -210,19 +211,138 @@ static inline void MyQSlerp(Quaternion &p, const Quaternion &q,
 }
 
 #ifdef ENABLE_BULLET
-static void InitSimulation() {
-  btDefaultCollisionConfiguration *config =
-      new btDefaultCollisionConfiguration();
-  btCollisionDispatcher *dispatcher = new btCollisionDispatcher(config);
-  btBroadphaseInterface *broadphase = new btDbvtBroadphase();
+#define PI 3.1415926535897932
 
-  btSequentialImpulseConstraintSolver *seqSol =
-      new btSequentialImpulseConstraintSolver();
+float fallHeight = 50;
+int simStep = 0;
+int maxSimSteps = 500;
 
-  btConstraintSolver *solver = seqSol;
+// http://bulletphysics.org/Bullet/BulletFull/classbtIDebugDraw.html
+class GLDebugDrawer : public btIDebugDraw
+{
+public:
+  GLDebugDrawer() : debugMode_() {}
+  virtual ~GLDebugDrawer() {}
+  virtual void drawLine(const btVector3& from, const btVector3& to, const btVector3& color);
+  virtual void drawContactPoint(const btVector3&, const btVector3&, btScalar, int, const btVector3&) {}
+  virtual void reportErrorWarning(const char*) {}
+  virtual void draw3dText(const btVector3&, const char*) {}
+  virtual void setDebugMode(int debugMode) { debugMode_ = debugMode; }
+  virtual int getDebugMode() const { return debugMode_; }
+  static GLDebugDrawer* instance() {
+    static GLDebugDrawer instance_;
+    return &instance_;
+  }
+private:
+  int debugMode_;
+};
+
+// http://stackoverflow.com/questions/14008295/how-to-implement-the-btidebugdraw-interface-of-bullet-in-opengl-4-0
+void GLDebugDrawer::drawLine(const btVector3& from, const btVector3& to, const btVector3& color) {
+  glBegin(GL_LINES);
+    glColor3f(color.getX(), color.getY(), color.getZ());
+    glVertex3d(from.getX(), from.getY(), from.getZ());
+    glColor3f(color.getX(), color.getY(), color.getZ());
+    glVertex3d(to.getX(), to.getY(), to.getZ());
+  glEnd();
 }
 
-static void StepSimulation() {}
+btBroadphaseInterface*               broadphase;
+btDefaultCollisionConfiguration*     collisionConfiguration;
+btCollisionDispatcher*               dispatcher;
+btSequentialImpulseConstraintSolver* solver;
+btDiscreteDynamicsWorld*             dynamicsWorld;
+
+btCollisionShape*     groundShape;
+btDefaultMotionState* groundMotionState;
+btRigidBody*          groundRigidBody;
+
+btCollisionShape*     fallShape;
+btDefaultMotionState* fallMotionState;
+btRigidBody*          fallRigidBody;
+
+// http://www.bulletphysics.org/mediawiki-1.5.8/index.php/Hello_World
+static void InitSimulation() {
+  broadphase             = new btDbvtBroadphase();
+  collisionConfiguration = new btDefaultCollisionConfiguration();
+  dispatcher             = new btCollisionDispatcher(collisionConfiguration);
+  solver                 = new btSequentialImpulseConstraintSolver;
+  dynamicsWorld          = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
+  dynamicsWorld->setGravity(btVector3(0, -10, 0));
+
+  groundShape       = new btStaticPlaneShape(btVector3(0, 1, 0), 1);
+  groundMotionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, -1, 0)));
+  groundRigidBody   = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(0, groundMotionState, groundShape, btVector3(0, 0, 0)));
+  dynamicsWorld->addRigidBody(groundRigidBody);
+
+  fallShape       = new btCapsuleShape(2, 4); //new btSphereShape(1);
+  fallMotionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, fallHeight, 0)));
+  float mass = 1;
+  btVector3 fallInertia(0, 0, 0);
+  fallShape->calculateLocalInertia(mass, fallInertia);
+  fallRigidBody = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(mass, fallMotionState, fallShape, fallInertia));
+  dynamicsWorld->addRigidBody(fallRigidBody);
+
+  // http://stackoverflow.com/questions/11985204/how-to-draw-render-a-bullet-physics-collision-body-shape
+  dynamicsWorld->setDebugDrawer(GLDebugDrawer::instance());
+  GLDebugDrawer::instance()->setDebugMode(true);
+}
+
+static void DeInitSimulation() {
+  dynamicsWorld->removeRigidBody(fallRigidBody);
+  delete fallRigidBody->getMotionState();
+  delete fallRigidBody;
+  delete fallShape;
+
+  dynamicsWorld->removeRigidBody(groundRigidBody);
+  delete groundRigidBody->getMotionState();
+  delete groundRigidBody;
+  delete groundShape;
+
+  delete dynamicsWorld;
+  delete solver;
+  delete dispatcher;
+  delete collisionConfiguration;
+  delete broadphase;
+}
+
+static void StepSimulation() {
+  dynamicsWorld->stepSimulation(1 / 60.f, 10);
+  btTransform trans;
+  fallRigidBody->getMotionState()->getWorldTransform(trans);
+  // DBG
+  // std::cout << "sphere height: " << trans.getOrigin().getY() << std::endl;
+  if(simStep > maxSimSteps || !fallRigidBody->isActive()) {
+    // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/MotionStates
+    btTransform startTransform;
+    startTransform.setIdentity();
+    startTransform.setOrigin(btVector3(0, fallHeight, 0));
+    float delta_x = -1+2*rand()/RAND_MAX;
+    float delta_y = -1+2*rand()/RAND_MAX;
+    float delta_z = -1+2*rand()/RAND_MAX;
+    float angle = 2*PI*rand()/RAND_MAX;
+    startTransform.setRotation(btQuaternion(delta_x, delta_y, delta_z, angle));
+    // startTransform.setFromOpenGLMatrix(...);
+
+    // this is not enough to move an object in bullet..
+    fallRigidBody->getMotionState()->setWorldTransform(startTransform);
+
+    // required step to move a rigid body in bullet
+    // re-adding the rigid body to the world also works
+    fallRigidBody->setMotionState(fallRigidBody->getMotionState());
+
+    // short-cut to moving "relative" position (undesired!)
+    // fallRigidBody->translate(btVector3(0, fallHeight, 0));
+
+    // required step to wake-up deactivated objects in bullet
+    // dynamic objects deactivate after remaining static for a while
+    fallRigidBody->activate();
+
+    simStep = 0;
+    return;
+  }
+  simStep++;
+}
 #endif
 
 static void DumpMatrix(float *m) {
@@ -990,6 +1110,19 @@ static void PrintBoneInfo() {
   glEnable(GL_LIGHTING);
 }
 
+#ifdef ENABLE_BULLET
+static void DrawBulletScene() {
+  glDisable(GL_LIGHTING);
+  glDisable(GL_DEPTH_TEST);
+
+  // http://stackoverflow.com/questions/11985204/how-to-draw-render-a-bullet-physics-collision-body-shape
+  dynamicsWorld->debugDrawWorld();
+
+  glEnable(GL_LIGHTING);
+  glEnable(GL_DEPTH_TEST);
+}
+#endif
+
 void build_rot_matrix(GLfloat m[4][4]) {
   /* get rotation matrix */
   build_rotmatrix(m, curr_quat);
@@ -1066,6 +1199,14 @@ void display() {
     DrawBone();
   }
   // DrawBoneOriginal();
+
+#ifdef ENABLE_BULLET
+  if(draw_bullet_scene) {
+    DrawBulletScene();
+  }
+
+  StepSimulation();
+#endif
 
   glutSwapBuffers();
 }
@@ -1262,6 +1403,9 @@ void keyboard(unsigned char k, int x, int y) {
   case 'z':
     draw_bones = !draw_bones;
     break;
+  case 'p':
+    draw_bullet_scene = !draw_bullet_scene;
+    break;
   case 'w':
     draw_wireframe = !draw_wireframe;
     if(draw_wireframe) {
@@ -1348,6 +1492,8 @@ void init() {
   draw_bbox = false;
   draw_bones = true;
   draw_wireframe = false;
+
+  srand(time(NULL));
 }
 
 int main(int argc, char **argv) {
@@ -1373,7 +1519,15 @@ int main(int argc, char **argv) {
   glutMotionFunc(motion);
   glutIdleFunc(animate);
 
+#ifdef ENABLE_BULLET
+  InitSimulation();
+#endif
+
   glutMainLoop();
+
+#ifdef ENABLE_BULLET
+  DeInitSimulation();
+#endif
 
   return 0;
 }
