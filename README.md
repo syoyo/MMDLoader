@@ -59,10 +59,24 @@ TODOs
 (Contributors welcome!)
 
 * [ ] Physics(Bullet)
+  * W.I.P.
+
+## Compiling example
+
+Here is the list of premake options.
+
+
+    --with-glm    : Use glm
+    --with-bullet : Use Bullet for physics(Set path to bullet in `premake4.lua`)
+    --with-euler  : Use Euler rotation
 
 ## Author
 
 Syoyo Fujita(syoyo@lighttransport.com)
+
+### Contributor(s)
+
+@onlyuser : glm, euler, Physics
 
 ## License
 
