@@ -261,8 +261,20 @@ btCollisionShape*     fallShape;
 btDefaultMotionState* fallMotionState;
 btRigidBody*          fallRigidBody;
 
+Bone* elbowBone = NULL;
+Bone* shoulderBone = NULL;
+
 // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/Hello_World
 static void InitSimulation() {
+  for(int i = 0; i < model->bones_.size(); i++) {
+    if(model->bones_[i].ascii_name == "elbow_R") {
+      elbowBone = &model->bones_[i];
+      shoulderBone = &model->bones_[(&model->bones_[elbowBone->parentIndex])->parentIndex];
+      assert(shoulderBone->ascii_name == "arm_R");
+      break;
+    }
+  }
+
   broadphase             = new btDbvtBroadphase();
   collisionConfiguration = new btDefaultCollisionConfiguration();
   dispatcher             = new btCollisionDispatcher(collisionConfiguration);
@@ -308,13 +320,16 @@ static void DeInitSimulation() {
 
 static void StepSimulation() {
   dynamicsWorld->stepSimulation(1 / 60.f, 10);
-  btTransform trans;
-  fallRigidBody->getMotionState()->getWorldTransform(trans);
   // DBG
+  // btTransform trans;
+  // fallRigidBody->getMotionState()->getWorldTransform(trans);
   // std::cout << "sphere height: " << trans.getOrigin().getY() << std::endl;
+#if 0
   if(simStep > maxSimSteps || !fallRigidBody->isActive()) {
+#endif
     // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/MotionStates
     btTransform startTransform;
+#if 0
     startTransform.setIdentity();
     startTransform.setOrigin(btVector3(0, fallHeight, 0));
     float axis_x = -1+2*rand()/RAND_MAX;
@@ -322,7 +337,14 @@ static void StepSimulation() {
     float axis_z = -1+2*rand()/RAND_MAX;
     float angle  = 2*PI*rand()/RAND_MAX;
     startTransform.setRotation(btQuaternion(axis_x, axis_y, axis_z, angle));
-    // startTransform.setFromOpenGLMatrix(...);
+#else
+    startTransform.setFromOpenGLMatrix(elbowBone->matrix);
+    btMatrix3x3 m(1, 0, 0,
+                  0, 1, 0,
+                  0, 0, -1);
+    btTransform t(m);
+    startTransform = t*startTransform;
+#endif
 
     // this is not enough to move an rigid body in bullet..
     fallRigidBody->getMotionState()->setWorldTransform(startTransform);
@@ -340,7 +362,9 @@ static void StepSimulation() {
 
     simStep = 0;
     return;
+#if 0
   }
+#endif
   simStep++;
 }
 #endif
@@ -1245,14 +1269,14 @@ void display() {
   // set_orthoview_pass(width, height);
 
   switch(split_screen_vr_mode) {
-  case 0:
+  case 0: // cycloptic (no VR)
     display_for_one_eye(0, 0);
     break;
-  case 1:
+  case 1: // parallel viewing
     display_for_one_eye(1, eye_distance);
     display_for_one_eye(2, eye_distance);
     break;
-  case 2:
+  case 2: // cross-eyed viewing
     display_for_one_eye(1, -eye_distance);
     display_for_one_eye(2, -eye_distance);
     break;
