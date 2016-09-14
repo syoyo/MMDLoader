@@ -324,7 +324,7 @@ static void StepSimulation() {
     startTransform.setRotation(btQuaternion(axis_x, axis_y, axis_z, angle));
     // startTransform.setFromOpenGLMatrix(...);
 
-    // this is not enough to move an object in bullet..
+    // this is not enough to move an rigid body in bullet..
     fallRigidBody->getMotionState()->setWorldTransform(startTransform);
 
     // required step to move a rigid body in bullet
@@ -334,8 +334,8 @@ static void StepSimulation() {
     // short-cut to moving "relative" position (undesired!)
     // fallRigidBody->translate(btVector3(0, fallHeight, 0));
 
-    // required step to wake-up deactivated objects in bullet
-    // dynamic objects deactivate after remaining static for a while
+    // required step to wake-up deactivated rigid bodies in bullet
+    // dynamic rigid bodies deactivate after remaining static for a while
     fallRigidBody->activate();
 
     simStep = 0;
@@ -1246,16 +1246,16 @@ void display() {
 
   switch(split_screen_vr_mode) {
   case 0:
-      display_for_one_eye(0, 0);
-      break;
+    display_for_one_eye(0, 0);
+    break;
   case 1:
-      display_for_one_eye(1, eye_distance);
-      display_for_one_eye(2, eye_distance);
-      break;
+    display_for_one_eye(1, eye_distance);
+    display_for_one_eye(2, eye_distance);
+    break;
   case 2:
-      display_for_one_eye(1, -eye_distance);
-      display_for_one_eye(2, -eye_distance);
-      break;
+    display_for_one_eye(1, -eye_distance);
+    display_for_one_eye(2, -eye_distance);
+    break;
   }
 
   glutSwapBuffers();
