@@ -317,11 +317,11 @@ static void StepSimulation() {
     btTransform startTransform;
     startTransform.setIdentity();
     startTransform.setOrigin(btVector3(0, fallHeight, 0));
-    float delta_x = -1+2*rand()/RAND_MAX;
-    float delta_y = -1+2*rand()/RAND_MAX;
-    float delta_z = -1+2*rand()/RAND_MAX;
-    float angle = 2*PI*rand()/RAND_MAX;
-    startTransform.setRotation(btQuaternion(delta_x, delta_y, delta_z, angle));
+    float axis_x = -1+2*rand()/RAND_MAX;
+    float axis_y = -1+2*rand()/RAND_MAX;
+    float axis_z = -1+2*rand()/RAND_MAX;
+    float angle  = 2*PI*rand()/RAND_MAX;
+    startTransform.setRotation(btQuaternion(axis_x, axis_y, axis_z, angle));
     // startTransform.setFromOpenGLMatrix(...);
 
     // this is not enough to move an object in bullet..
@@ -1068,10 +1068,13 @@ static void DrawBoneBbox() {
   glEnable(GL_LIGHTING);
 }
 
+void build_rot_matrix(GLfloat m[4][4]);
+
 static void DrawSceneBbox() {
   glDisable(GL_LIGHTING);
   glDisable(GL_DEPTH_TEST);
 
+#if (defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA))
   glPushMatrix();
   glScalef(1, 1, -1);
   glTranslatef(scene->dynamic_min.x, scene->dynamic_min.y, scene->dynamic_min.z);
@@ -1080,6 +1083,23 @@ static void DrawSceneBbox() {
   glColor3f(1, 1, 1);
   glutWireCube(1);
   glPopMatrix();
+#else
+  GLfloat m[4][4];
+
+  /* get rotation matrix */
+  build_rot_matrix(m);
+
+  glMultMatrixf(&(m[0][0]));
+
+  // draw scene bounding box
+  glPushMatrix();
+  glColor3f(1.0, 1.0, 1.0);
+  glScalef(center[0], center[1], center[2]);
+  glutWireCube(2.0 / scenesize);
+  glPopMatrix();
+
+  glScalef(1.0 / scenesize, 1.0 / scenesize, 1.0 / scenesize);
+#endif
 
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
@@ -1129,15 +1149,8 @@ void build_rot_matrix(GLfloat m[4][4]) {
 }
 
 void display() {
-  GLfloat m[4][4];
-
   glClearColor(0.0, 0.0, 0.0, 0.0);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-#if ! (defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA))
-  /* get rotation matrix */
-  build_rot_matrix(m);
-#endif
 
   // set_orthoview_pass(width, height);
 
@@ -1155,20 +1168,7 @@ void display() {
             view_tgt[2], 0, 1, 0); /* Y up */
 #endif
 
-#if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
   DrawSceneBbox();
-#else
-  glMultMatrixf(&(m[0][0]));
-
-  // draw scene bounding box
-  glPushMatrix();
-  glColor3f(1.0, 1.0, 1.0);
-  glScalef(center[0], center[1], center[2]);
-  glutWireCube(2.0 / scenesize);
-  glPopMatrix();
-
-  glScalef(1.0 / scenesize, 1.0 / scenesize, 1.0 / scenesize);
-#endif
 
   Update();
 
