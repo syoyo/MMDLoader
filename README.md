@@ -76,7 +76,7 @@ Syoyo Fujita(syoyo@lighttransport.com)
 
 ### Contributor(s)
 
-@onlyuser : glm, euler, Physics
+Jerry Chen(onlyuser@gmail.com) : glm, euler, Physics
 
 ## License
 

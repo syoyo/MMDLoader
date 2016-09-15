@@ -1186,6 +1186,14 @@ void display_for_one_eye(int eye_index, float eye_distance) {
   gluPerspective(view_fov, (float)w / (float)h, 0.1f, 50.0f);
 #endif
 
+#if !(defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA))
+  parallax_offset /= scenesize;
+#endif
+
+  if(eye_index) {
+    glTranslatef(parallax_offset, 0, 0);
+  }
+
   glMatrixMode(GL_MODELVIEW);
 
 #ifdef ENABLE_GLM
@@ -1209,10 +1217,6 @@ void display_for_one_eye(int eye_index, float eye_distance) {
   glMultMatrixf(&(m[0][0]));
   glScalef(1.0 / scenesize, 1.0 / scenesize, 1.0 / scenesize);
 #endif
-
-  if(eye_index) {
-    glTranslatef(parallax_offset, 0, 0);
-  }
 
   DrawAxis();
 
