@@ -87,12 +87,11 @@ static GLfloat view_org[3];  /* view origin			*/
 static GLfloat view_tgt[3];  /* view target			*/
 static GLfloat view_fov = 45.0f;
 static float bmin[3] = {-1, -1, -1}, bmax[3] = {1, 1, 1};
-static float center[3] = {0.0, 0.0, 0.0};
-static float maxval;
 static float scenesize = 20.0f;
 static int current_frame = 0;
 static int sub_frame = 0;
 static int frame_step = 1; // less = faster playback.
+static float eye_distance = 2.0f;
 
 #if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
 bool left_mouse_down = false, right_mouse_down = false;
@@ -105,11 +104,12 @@ static bool do_animate = true;
 static bool draw_axis = false;
 static bool draw_ik = false;
 static bool draw_mesh = true;
-static bool draw_bbox = false;
+static int draw_bbox_mode = 0;
 static bool draw_bones = true;
 static bool draw_wireframe = false;
 static bool print_bone_info = false;
 static bool draw_bullet_scene = false;
+static int split_screen_vr_mode = 0;
 
 PMDModel *model = NULL;
 VMDAnimation *anim = NULL;
@@ -261,8 +261,20 @@ btCollisionShape*     fallShape;
 btDefaultMotionState* fallMotionState;
 btRigidBody*          fallRigidBody;
 
+Bone* elbowBone = NULL;
+Bone* shoulderBone = NULL;
+
 // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/Hello_World
 static void InitSimulation() {
+  for(int i = 0; i < model->bones_.size(); i++) {
+    if(model->bones_[i].ascii_name == "elbow_R") {
+      elbowBone = &model->bones_[i];
+      shoulderBone = &model->bones_[(&model->bones_[elbowBone->parentIndex])->parentIndex];
+      assert(shoulderBone->ascii_name == "arm_R");
+      break;
+    }
+  }
+
   broadphase             = new btDbvtBroadphase();
   collisionConfiguration = new btDefaultCollisionConfiguration();
   dispatcher             = new btCollisionDispatcher(collisionConfiguration);
@@ -308,23 +320,33 @@ static void DeInitSimulation() {
 
 static void StepSimulation() {
   dynamicsWorld->stepSimulation(1 / 60.f, 10);
-  btTransform trans;
-  fallRigidBody->getMotionState()->getWorldTransform(trans);
   // DBG
+  // btTransform trans;
+  // fallRigidBody->getMotionState()->getWorldTransform(trans);
   // std::cout << "sphere height: " << trans.getOrigin().getY() << std::endl;
+#if 0
   if(simStep > maxSimSteps || !fallRigidBody->isActive()) {
+#endif
     // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/MotionStates
     btTransform startTransform;
+#if 0
     startTransform.setIdentity();
     startTransform.setOrigin(btVector3(0, fallHeight, 0));
-    float delta_x = -1+2*rand()/RAND_MAX;
-    float delta_y = -1+2*rand()/RAND_MAX;
-    float delta_z = -1+2*rand()/RAND_MAX;
-    float angle = 2*PI*rand()/RAND_MAX;
-    startTransform.setRotation(btQuaternion(delta_x, delta_y, delta_z, angle));
-    // startTransform.setFromOpenGLMatrix(...);
+    float axis_x = -1+2*rand()/RAND_MAX;
+    float axis_y = -1+2*rand()/RAND_MAX;
+    float axis_z = -1+2*rand()/RAND_MAX;
+    float angle  = 2*PI*rand()/RAND_MAX;
+    startTransform.setRotation(btQuaternion(axis_x, axis_y, axis_z, angle));
+#else
+    startTransform.setFromOpenGLMatrix(elbowBone->matrix);
+    btMatrix3x3 m(1, 0, 0,
+                  0, 1, 0,
+                  0, 0, -1);
+    btTransform t(m);
+    startTransform = t*startTransform;
+#endif
 
-    // this is not enough to move an object in bullet..
+    // this is not enough to move an rigid body in bullet..
     fallRigidBody->getMotionState()->setWorldTransform(startTransform);
 
     // required step to move a rigid body in bullet
@@ -334,13 +356,15 @@ static void StepSimulation() {
     // short-cut to moving "relative" position (undesired!)
     // fallRigidBody->translate(btVector3(0, fallHeight, 0));
 
-    // required step to wake-up deactivated objects in bullet
-    // dynamic objects deactivate after remaining static for a while
+    // required step to wake-up deactivated rigid bodies in bullet
+    // dynamic rigid bodies deactivate after remaining static for a while
     fallRigidBody->activate();
 
     simStep = 0;
     return;
+#if 0
   }
+#endif
   simStep++;
 }
 #endif
@@ -843,7 +867,7 @@ static void Update() {
 
 static void DrawMesh() {
   glDisable(GL_LIGHTING);
-  glEnable(GL_DEPTH_TEST);
+  //glDisable(GL_DEPTH_TEST);
 
   glBegin(GL_TRIANGLES);
   int face_count = model->indices_.size() / 3;
@@ -871,7 +895,7 @@ static void DrawMesh() {
   }
   glEnd();
 
-  glDisable(GL_DEPTH_TEST);
+  //glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
 }
 
@@ -1048,7 +1072,7 @@ static void DrawBoneAxis() {
 
 static void DrawBoneBbox() {
   glDisable(GL_LIGHTING);
-  glDisable(GL_DEPTH_TEST);
+  //glDisable(GL_DEPTH_TEST);
 
   for (int i = 0; i < model->bones_.size(); i++) {
     Bone &b = model->bones_[i];
@@ -1064,13 +1088,13 @@ static void DrawBoneBbox() {
     glPopMatrix();
   }
 
-  glEnable(GL_DEPTH_TEST);
+  //glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
 }
 
 static void DrawSceneBbox() {
   glDisable(GL_LIGHTING);
-  glDisable(GL_DEPTH_TEST);
+  //glDisable(GL_DEPTH_TEST);
 
   glPushMatrix();
   glScalef(1, 1, -1);
@@ -1081,7 +1105,7 @@ static void DrawSceneBbox() {
   glutWireCube(1);
   glPopMatrix();
 
-  glEnable(GL_DEPTH_TEST);
+  //glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
 }
 
@@ -1118,8 +1142,8 @@ static void DrawBulletScene() {
   // http://stackoverflow.com/questions/11985204/how-to-draw-render-a-bullet-physics-collision-body-shape
   dynamicsWorld->debugDrawWorld();
 
-  glEnable(GL_LIGHTING);
   glEnable(GL_DEPTH_TEST);
+  glEnable(GL_LIGHTING);
 }
 #endif
 
@@ -1128,18 +1152,39 @@ void build_rot_matrix(GLfloat m[4][4]) {
   build_rotmatrix(m, curr_quat);
 }
 
-void display() {
-  GLfloat m[4][4];
+void display_for_one_eye(int eye_index, float eye_distance) {
+  float w = width;
+  float h = height;
 
-  glClearColor(0.0, 0.0, 0.0, 0.0);
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  float parallax_offset = 0;
 
-#if ! (defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA))
-  /* get rotation matrix */
-  build_rot_matrix(m);
+  switch(eye_index) {
+  case 0: // cycloptic (no VR)
+    glViewport(0, 0, w, h);
+    break;
+  case 1: // left eye
+    w = width*0.5;
+    h = height;
+    glViewport(0, 0, w, h);
+    parallax_offset = eye_distance*0.5;
+    break;
+  case 2: // right eye
+    w = width*0.5;
+    h = height;
+    glViewport(w, 0, w, h);
+    parallax_offset = -eye_distance*0.5;
+    break;
+  }
+
+  glMatrixMode(GL_PROJECTION);
+
+#ifdef ENABLE_GLM
+  glm::mat4 projection = glm::perspective(view_fov, (float)w / (float)h, 0.1f, 50.0f);
+  glLoadMatrixf(glm::value_ptr(projection));
+#else
+  glLoadIdentity();
+  gluPerspective(view_fov, (float)w / (float)h, 0.1f, 50.0f);
 #endif
-
-  // set_orthoview_pass(width, height);
 
   glMatrixMode(GL_MODELVIEW);
 
@@ -1155,22 +1200,19 @@ void display() {
             view_tgt[2], 0, 1, 0); /* Y up */
 #endif
 
-#if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
-  DrawSceneBbox();
-#else
+#if !(defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA))
+  GLfloat m[4][4];
+
+  /* get rotation matrix */
+  build_rot_matrix(m);
+
   glMultMatrixf(&(m[0][0]));
-
-  // draw scene bounding box
-  glPushMatrix();
-  glColor3f(1.0, 1.0, 1.0);
-  glScalef(center[0], center[1], center[2]);
-  glutWireCube(2.0 / scenesize);
-  glPopMatrix();
-
   glScalef(1.0 / scenesize, 1.0 / scenesize, 1.0 / scenesize);
 #endif
 
-  Update();
+  if(eye_index) {
+    glTranslatef(parallax_offset, 0, 0);
+  }
 
   DrawAxis();
 
@@ -1187,12 +1229,19 @@ void display() {
     DrawMesh();
   }
 
-  if(draw_bbox) {
+  switch(draw_bbox_mode) {
+  case 0:
+    break;
+  case 1:
+    DrawSceneBbox();
+    break;
+  case 2:
+    DrawSceneBbox();
     DrawBoneBbox();
-  }
-
-  if(print_bone_info) {
-    PrintBoneInfo();
+    break;
+  case 3:
+    DrawBoneBbox();
+    break;
   }
 
   if(draw_bones) {
@@ -1200,30 +1249,47 @@ void display() {
   }
   // DrawBoneOriginal();
 
+  if(print_bone_info) {
+    PrintBoneInfo();
+  }
+
 #ifdef ENABLE_BULLET
   if(draw_bullet_scene) {
     DrawBulletScene();
   }
-
-  StepSimulation();
 #endif
+}
+
+void display() {
+  Update();
+
+  glClearColor(0.0, 0.0, 0.0, 0.0);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+  // set_orthoview_pass(width, height);
+
+  switch(split_screen_vr_mode) {
+  case 0: // cycloptic (no VR)
+    display_for_one_eye(0, 0);
+    break;
+  case 1: // parallel viewing
+    display_for_one_eye(1, eye_distance);
+    display_for_one_eye(2, eye_distance);
+    break;
+  case 2: // cross-eyed viewing
+    display_for_one_eye(1, -eye_distance);
+    display_for_one_eye(2, -eye_distance);
+    break;
+  }
 
   glutSwapBuffers();
+
+#ifdef ENABLE_BULLET
+  StepSimulation();
+#endif
 }
 
 void reshape(int w, int h) {
-  glViewport(0, 0, w, h);
-  glMatrixMode(GL_PROJECTION);
-#ifdef ENABLE_GLM
-  glm::mat4 projection = glm::perspective(view_fov, (float)w / (float)h, 0.1f, 50.0f);
-  glLoadMatrixf(glm::value_ptr(projection));
-#else
-  glLoadIdentity();
-  gluPerspective(view_fov, (float)w / (float)h, 0.1f, 50.0f);
-#endif
-  glMatrixMode(GL_MODELVIEW);
-  glLoadIdentity();
-
   width = w;
   height = h;
 }
@@ -1398,15 +1464,13 @@ void keyboard(unsigned char k, int x, int y) {
     draw_mesh = !draw_mesh;
     break;
   case 'b':
-    draw_bbox = !draw_bbox;
+    draw_bbox_mode = (draw_bbox_mode+1)%4;
     break;
   case 'z':
     draw_bones = !draw_bones;
     break;
-  case 'p':
-    draw_bullet_scene = !draw_bullet_scene;
-    break;
   case 'w':
+    draw_mesh = true;
     draw_wireframe = !draw_wireframe;
     if(draw_wireframe) {
       glPolygonMode(GL_FRONT, GL_LINE);
@@ -1416,6 +1480,12 @@ void keyboard(unsigned char k, int x, int y) {
     break;
   case 'n':
     print_bone_info = !print_bone_info;
+    break;
+  case 'p':
+    draw_bullet_scene = !draw_bullet_scene;
+    break;
+  case 'v':
+    split_screen_vr_mode = (split_screen_vr_mode+1)%3;
     break;
   case ' ': /* space */
     /* reset view */
@@ -1481,17 +1551,19 @@ void init() {
   glCullFace(GL_BACK);
   glEnable(GL_CULL_FACE);
 
-  glEnable(GL_LIGHTING);
-  glEnable(GL_LIGHT0);
+  glDisable(GL_LIGHTING);
   glEnable(GL_DEPTH_TEST);
 
   do_animate = true;
   draw_axis = false;
   draw_ik = false;
   draw_mesh = true;
-  draw_bbox = false;
+  draw_bbox_mode = 0;
   draw_bones = true;
   draw_wireframe = false;
+  print_bone_info = false;
+  draw_bullet_scene = false;
+  split_screen_vr_mode = 0;
 
   srand(time(NULL));
 }
