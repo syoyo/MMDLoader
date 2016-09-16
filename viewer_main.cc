@@ -35,6 +35,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/euler_angles.hpp>
 
 #ifdef ENABLE_EULER_CAMERA
 #include <glm/gtx/vector_angle.hpp>
@@ -131,6 +132,10 @@ float collist[7][3] = {
 };
 
 #if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
+#define EPSILON 0.0001
+
+#define SIGN(x) (!(x) ? 0 : (((x) > 0) ? 1 : -1))
+
 static glm::vec3 OrientToOffset(glm::vec3 orient) {
   glm::mat4 pitch = GLM_ROTATE(
       glm::mat4(1),
@@ -139,6 +144,24 @@ static glm::vec3 OrientToOffset(glm::vec3 orient) {
       glm::mat4(1),
       ORIENT_YAW(orient), VEC_UP);
   return glm::vec3(yaw*pitch*glm::vec4(VEC_FORWARD, 1));
+}
+
+glm::vec3 OffsetToOrient(glm::vec3 offset) {
+    offset = glm::normalize(offset);
+    glm::vec3 t(offset.x, 0, offset.z); // flattened offset
+    t = glm::normalize(t);
+    glm::vec3 r(
+        0,
+        glm::angle(t, offset),
+        glm::angle(t, VEC_FORWARD));
+    if(static_cast<float>(fabs(offset.x)) < EPSILON && static_cast<float>(fabs(offset.z)) < EPSILON) {
+        ORIENT_PITCH(r) = -SIGN(offset.y)*glm::radians(90.0f);
+        ORIENT_YAW(r) = 0; // undefined
+        return r;
+    }
+    if(offset.x < 0) ORIENT_YAW(r)   *= -1;
+    if(offset.y > 0) ORIENT_PITCH(r) *= -1;
+    return r;
 }
 
 static void UpdateCameraParams() {
@@ -253,24 +276,24 @@ btCollisionDispatcher*               dispatcher;
 btSequentialImpulseConstraintSolver* solver;
 btDiscreteDynamicsWorld*             dynamicsWorld;
 
-btCollisionShape*     groundShape;
-btDefaultMotionState* groundMotionState;
-btRigidBody*          groundRigidBody;
+struct btRigidBodyWrapper {
+    btCollisionShape*     shape;
+    btDefaultMotionState* motionState;
+    btRigidBody*          rigidBody;
+};
 
-btCollisionShape*     fallShape;
-btDefaultMotionState* fallMotionState;
-btRigidBody*          fallRigidBody;
+btRigidBodyWrapper ground, fall;
 
 Bone* elbowBone = NULL;
-Bone* shoulderBone = NULL;
+Bone* tailBone = NULL;
 
 // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/Hello_World
 static void InitSimulation() {
   for(int i = 0; i < model->bones_.size(); i++) {
     if(model->bones_[i].ascii_name == "elbow_R") {
       elbowBone = &model->bones_[i];
-      shoulderBone = &model->bones_[(&model->bones_[elbowBone->parentIndex])->parentIndex];
-      assert(shoulderBone->ascii_name == "arm_R");
+      tailBone = &model->bones_[elbowBone->tailIndex];
+      assert(tailBone->ascii_name == "wrist_R");
       break;
     }
   }
@@ -282,18 +305,26 @@ static void InitSimulation() {
   dynamicsWorld          = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
   dynamicsWorld->setGravity(btVector3(0, -10, 0));
 
-  groundShape       = new btStaticPlaneShape(btVector3(0, 1, 0), 1);
-  groundMotionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, -1, 0)));
-  groundRigidBody   = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(0, groundMotionState, groundShape, btVector3(0, 0, 0)));
-  dynamicsWorld->addRigidBody(groundRigidBody);
+  ground.shape       = new btStaticPlaneShape(btVector3(0, 1, 0), 1);
+  ground.motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, -1, 0)));
+  ground.rigidBody   = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(0, ground.motionState, ground.shape, btVector3(0, 0, 0)));
+  dynamicsWorld->addRigidBody(ground.rigidBody);
 
-  fallShape       = new btCapsuleShape(2, 4); //new btSphereShape(1);
-  fallMotionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, fallHeight, 0)));
-  float mass = 1;
+  glm::vec3 bone_start(elbowBone->pos[0], elbowBone->pos[1], elbowBone->pos[2]);
+  glm::vec3 bone_end(tailBone->pos[0], tailBone->pos[1], tailBone->pos[2]);
+#if 1
+  fall.shape = new btCapsuleShape(2, 4); //new btSphereShape(0.5);
+#else
+  float bone_length = glm::distance(bone_start, bone_end);
+  float bone_girth = 0.5;
+  fall.shape = new btCapsuleShape(bone_girth, bone_length); //new btSphereShape(0.5);
+#endif
+  fall.motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, fallHeight, 0)));
+  float fallMass = 1;
   btVector3 fallInertia(0, 0, 0);
-  fallShape->calculateLocalInertia(mass, fallInertia);
-  fallRigidBody = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(mass, fallMotionState, fallShape, fallInertia));
-  dynamicsWorld->addRigidBody(fallRigidBody);
+  fall.shape->calculateLocalInertia(fallMass, fallInertia);
+  fall.rigidBody = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(fallMass, fall.motionState, fall.shape, fallInertia));
+  dynamicsWorld->addRigidBody(fall.rigidBody);
 
   // http://stackoverflow.com/questions/11985204/how-to-draw-render-a-bullet-physics-collision-body-shape
   dynamicsWorld->setDebugDrawer(GLDebugDrawer::instance());
@@ -301,15 +332,15 @@ static void InitSimulation() {
 }
 
 static void DeInitSimulation() {
-  dynamicsWorld->removeRigidBody(fallRigidBody);
-  delete fallRigidBody->getMotionState();
-  delete fallRigidBody;
-  delete fallShape;
+  dynamicsWorld->removeRigidBody(fall.rigidBody);
+  delete fall.rigidBody->getMotionState();
+  delete fall.rigidBody;
+  delete fall.shape;
 
-  dynamicsWorld->removeRigidBody(groundRigidBody);
-  delete groundRigidBody->getMotionState();
-  delete groundRigidBody;
-  delete groundShape;
+  dynamicsWorld->removeRigidBody(ground.rigidBody);
+  delete ground.rigidBody->getMotionState();
+  delete ground.rigidBody;
+  delete ground.shape;
 
   delete dynamicsWorld;
   delete solver;
@@ -322,14 +353,15 @@ static void StepSimulation() {
   dynamicsWorld->stepSimulation(1 / 60.f, 10);
   // DBG
   // btTransform trans;
-  // fallRigidBody->getMotionState()->getWorldTransform(trans);
+  // fall.rigidBody->getMotionState()->getWorldTransform(trans);
   // std::cout << "sphere height: " << trans.getOrigin().getY() << std::endl;
-#if 0
-  if(simStep > maxSimSteps || !fallRigidBody->isActive()) {
+#if 1
+  if(simStep > maxSimSteps || !fall.rigidBody->isActive()) {
 #endif
     // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/MotionStates
     btTransform startTransform;
-#if 0
+
+#if 1
     startTransform.setIdentity();
     startTransform.setOrigin(btVector3(0, fallHeight, 0));
     float axis_x = -1+2*rand()/RAND_MAX;
@@ -338,31 +370,46 @@ static void StepSimulation() {
     float angle  = 2*PI*rand()/RAND_MAX;
     startTransform.setRotation(btQuaternion(axis_x, axis_y, axis_z, angle));
 #else
-    startTransform.setFromOpenGLMatrix(elbowBone->matrix);
-    btMatrix3x3 m(1, 0, 0,
-                  0, 1, 0,
-                  0, 0, -1);
-    btTransform t(m);
-    startTransform = t*startTransform;
+    glm::vec4 bone_start = glm::scale(glm::mat4(1), glm::vec3(1, 1, -1))*glm::make_mat4(elbowBone->matrix)*glm::vec4(0, 0, 0, 1);
+    glm::vec4 bone_end = glm::scale(glm::mat4(1), glm::vec3(1, 1, -1))*glm::make_mat4(tailBone->matrix)*glm::vec4(0, 0, 0, 1);
+    glm::vec3 bone_orient = OffsetToOrient(glm::vec3(bone_end - bone_start));
+    glm::mat4 bone_orient_xform_glm = glm::yawPitchRoll(ORIENT_YAW(bone_orient),
+                                                        ORIENT_PITCH(bone_orient),
+                                                        ORIENT_ROLL(bone_orient));
+    bone_orient_xform_glm *= GLM_ROTATE(glm::mat4(1), 90.0f, glm::vec3(1, 0, 0));
+    btMatrix3x3 bone_orient_xform_bt;
+    for(int i = 0; i<4; i++) {
+        for(int j = 0; j<4; j++) {
+            bone_orient_xform_bt[i][j] = bone_orient_xform_glm[j][i];
+        }
+    }
+    glm::vec4 bone_center = (bone_start + bone_end)*0.5f;
+    startTransform = btTransform(bone_orient_xform_bt, btVector3(bone_center.x, bone_center.y, bone_center.z));
+    //startTransform.setFromOpenGLMatrix(elbowBone->matrix);
+    //btMatrix3x3 m(1, 0, 0,
+    //              0, 1, 0,
+    //              0, 0, -1);
+    //btTransform t(m);
+    //startTransform = t*startTransform;
 #endif
 
     // this is not enough to move an rigid body in bullet..
-    fallRigidBody->getMotionState()->setWorldTransform(startTransform);
+    fall.rigidBody->getMotionState()->setWorldTransform(startTransform);
 
     // required step to move a rigid body in bullet
     // re-adding the rigid body to the world also works
-    fallRigidBody->setMotionState(fallRigidBody->getMotionState());
+    fall.rigidBody->setMotionState(fall.rigidBody->getMotionState());
 
     // short-cut to moving "relative" position (undesired!)
-    // fallRigidBody->translate(btVector3(0, fallHeight, 0));
+    // fall.rigidBody->translate(btVector3(0, fallHeight, 0));
 
     // required step to wake-up deactivated rigid bodies in bullet
     // dynamic rigid bodies deactivate after remaining static for a while
-    fallRigidBody->activate();
+    fall.rigidBody->activate();
 
     simStep = 0;
     return;
-#if 0
+#if 1
   }
 #endif
   simStep++;
