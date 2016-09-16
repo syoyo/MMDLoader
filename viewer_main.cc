@@ -378,16 +378,29 @@ static void InitSimulation() {
     }
     Bone* followBoneTail = &model->bones_[followBone->tailIndex];
 
-    // calculate bone endpoints in model space
+    // calculate bone dimensions
+#ifdef ENABLE_GLM
     glm::vec3 bone_start(followBone->pos[0], followBone->pos[1], followBone->pos[2]);
     glm::vec3 bone_end(followBoneTail->pos[0], followBoneTail->pos[1], followBoneTail->pos[2]);
-
-    // calculate bone dimensions
-    float bone_radius = std::min(followBone->dim.x, std::min(followBone->dim.y, followBone->dim.z))*0.5;
-    float bone_length = std::max(glm::distance(bone_start, bone_end) - bone_radius*2, 0.0f);
+    float bone_length = glm::distance(bone_start, bone_end);
+#else
+    Vector3 bone_start;
+    bone_start.x = followBone->pos[0];
+    bone_start.y = followBone->pos[1];
+    bone_start.z = followBone->pos[2];
+    Vector3 bone_end;
+    bone_end.x = followBoneTail->pos[0];
+    bone_end.y = followBoneTail->pos[1];
+    bone_end.z = followBoneTail->pos[2];
+    Vector3 bone_delta;
+    VSub(bone_delta, bone_end, bone_start);
+    float bone_length = VLength(bone_delta);
+#endif
 
     // configure dynamic object just like ground
-    bullet_dynamic_object->shape = new btCapsuleShape(bone_radius, bone_length);
+    float capsule_radius = std::min(followBone->dim.x, std::min(followBone->dim.y, followBone->dim.z))*0.5;
+    float capsule_length = std::max(bone_length - capsule_radius*2, 0.0f);
+    bullet_dynamic_object->shape = new btCapsuleShape(capsule_radius, capsule_length);
     bullet_dynamic_object->motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, 0, 0)));
     bullet_dynamic_object->rigidBody = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(0, bullet_dynamic_object->motionState, bullet_dynamic_object->shape, btVector3(0, 0, 0)));
 
@@ -448,7 +461,7 @@ static void StepSimulation() {
     // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/MotionStates
     btTransform startTransform;
 
-#if 1
+#ifdef ENABLE_GLM
     // calculate bone endpoints in world space
     Bone* followBoneTail = &model->bones_[followBone->tailIndex];
     glm::vec4 bone_start = glm::make_mat4(followBone->matrix)*glm::vec4(0, 0, 0, 1);
