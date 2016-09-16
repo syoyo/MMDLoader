@@ -6,6 +6,7 @@
 
 #include <iostream>
 #include <vector>
+#include <set>
 #include <algorithm>
 #include <cmath>
 
@@ -35,10 +36,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <glm/gtx/euler_angles.hpp>
-
-#ifdef ENABLE_EULER_CAMERA
 #include <glm/gtx/vector_angle.hpp>
+#include <glm/gtx/euler_angles.hpp>
 
 #if GLM_VERSION >= 96
     // glm::rotate changed from degrees to radians in GLM 0.9.6
@@ -46,7 +45,6 @@
     #define GLM_ROTATE(m, a, v) glm::rotate((m), glm::radians(a), (v))
 #else
     #define GLM_ROTATE(m, a, v) glm::rotate((m), (a), (v))
-#endif
 #endif
 
 #endif
@@ -57,7 +55,7 @@ using namespace mmd;
 #define WINDOW_HEIGHT 600
 #define LARGE_NUMBER 1000000
 
-#if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
+#if defined(ENABLE_GLM)
 #define ORIENT_ROLL(v)  v[0]
 #define ORIENT_PITCH(v) v[1]
 #define ORIENT_YAW(v)   v[2]
@@ -66,8 +64,11 @@ using namespace mmd;
 #define VEC_UP      glm::vec3(0, 1, 0)
 #define VEC_FORWARD glm::vec3(0, 0, 1)
 
+#ifdef ENABLE_EULER_CAMERA
 #define MAX_PITCH  89.999
 #define MIN_PITCH -89.999
+#endif
+
 #endif
 
 #define MAX_BUF_LEN 20
@@ -131,7 +132,7 @@ float collist[7][3] = {
     {1.0, 1.0, 1.0},
 };
 
-#if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
+#if defined(ENABLE_GLM)
 #define EPSILON 0.0001
 
 #define SIGN(x) (!(x) ? 0 : (((x) > 0) ? 1 : -1))
@@ -164,6 +165,7 @@ glm::vec3 OffsetToOrient(glm::vec3 offset) {
     return r;
 }
 
+#ifdef ENABLE_EULER_CAMERA
 static void UpdateCameraParams() {
   glm::vec3 view_target(scene->static_center.x, scene->static_center.y, scene->static_center.z);
   glm::vec3 view_origin = view_target+OrientToOffset(orient)*orbit_radius;
@@ -174,6 +176,8 @@ static void UpdateCameraParams() {
   view_tgt[1] = scene->static_center.y;
   view_tgt[2] = scene->static_center.z;
 }
+#endif
+
 #endif
 
 static void PrintBitmapString(void* font, const char* s) {
@@ -276,28 +280,19 @@ btCollisionDispatcher*               dispatcher;
 btSequentialImpulseConstraintSolver* solver;
 btDiscreteDynamicsWorld*             dynamicsWorld;
 
-struct btRigidBodyWrapper {
+struct BulletDynamicObject_t {
     btCollisionShape*     shape;
     btDefaultMotionState* motionState;
     btRigidBody*          rigidBody;
+    Bone*                 followBone;
 };
 
-btRigidBodyWrapper ground, fall;
-
-Bone* elbowBone = NULL;
-Bone* tailBone = NULL;
+BulletDynamicObject_t ground, fall;
+std::vector<BulletDynamicObject_t*> bullet_rigid_body_wrappers;
+std::set<std::string> bullet_follow_bone_names;
 
 // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/Hello_World
 static void InitSimulation() {
-  for(int i = 0; i < model->bones_.size(); i++) {
-    if(model->bones_[i].ascii_name == "elbow_R") {
-      elbowBone = &model->bones_[i];
-      tailBone = &model->bones_[elbowBone->tailIndex];
-      assert(tailBone->ascii_name == "wrist_R");
-      break;
-    }
-  }
-
   broadphase             = new btDbvtBroadphase();
   collisionConfiguration = new btDefaultCollisionConfiguration();
   dispatcher             = new btCollisionDispatcher(collisionConfiguration);
@@ -310,15 +305,7 @@ static void InitSimulation() {
   ground.rigidBody   = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(0, ground.motionState, ground.shape, btVector3(0, 0, 0)));
   dynamicsWorld->addRigidBody(ground.rigidBody);
 
-  glm::vec3 bone_start(elbowBone->pos[0], elbowBone->pos[1], elbowBone->pos[2]);
-  glm::vec3 bone_end(tailBone->pos[0], tailBone->pos[1], tailBone->pos[2]);
-#if 1
   fall.shape = new btCapsuleShape(2, 4); //new btSphereShape(0.5);
-#else
-  float bone_length = glm::distance(bone_start, bone_end);
-  float bone_girth = 0.5;
-  fall.shape = new btCapsuleShape(bone_girth, bone_length); //new btSphereShape(0.5);
-#endif
   fall.motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, fallHeight, 0)));
   float fallMass = 1;
   btVector3 fallInertia(0, 0, 0);
@@ -326,12 +313,108 @@ static void InitSimulation() {
   fall.rigidBody = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(fallMass, fall.motionState, fall.shape, fallInertia));
   dynamicsWorld->addRigidBody(fall.rigidBody);
 
+  // main bones
+  bullet_follow_bone_names.insert("head");
+  bullet_follow_bone_names.insert("neck");
+  bullet_follow_bone_names.insert("upper_body");
+  bullet_follow_bone_names.insert("lower_body");
+
+  // arm bones
+  bullet_follow_bone_names.insert("shoulder_L");
+  bullet_follow_bone_names.insert("shoulder_R");
+  bullet_follow_bone_names.insert("arm_L");
+  bullet_follow_bone_names.insert("arm_R");
+  bullet_follow_bone_names.insert("elbow_L");
+  bullet_follow_bone_names.insert("elbow_R");
+  bullet_follow_bone_names.insert("wrist_L");
+  bullet_follow_bone_names.insert("wrist_R");
+
+  // leg bones
+  bullet_follow_bone_names.insert("leg_L");
+  bullet_follow_bone_names.insert("leg_R");
+  bullet_follow_bone_names.insert("knee_L");
+  bullet_follow_bone_names.insert("knee_R");
+  bullet_follow_bone_names.insert("ankle_L");
+  bullet_follow_bone_names.insert("ankle_R");
+
+  // minor bones
+  bullet_follow_bone_names.insert("thumb1_L");
+  bullet_follow_bone_names.insert("thumb1_R");
+  bullet_follow_bone_names.insert("thumb2_L");
+  bullet_follow_bone_names.insert("thumb2_R");
+  bullet_follow_bone_names.insert("fore1_L");
+  bullet_follow_bone_names.insert("fore1_R");
+  bullet_follow_bone_names.insert("fore2_L");
+  bullet_follow_bone_names.insert("fore2_R");
+  bullet_follow_bone_names.insert("fore3_L");
+  bullet_follow_bone_names.insert("fore3_R");
+  bullet_follow_bone_names.insert("middle1_L");
+  bullet_follow_bone_names.insert("middle1_R");
+  bullet_follow_bone_names.insert("middle2_L");
+  bullet_follow_bone_names.insert("middle2_R");
+  bullet_follow_bone_names.insert("middle3_L");
+  bullet_follow_bone_names.insert("middle3_R");
+  bullet_follow_bone_names.insert("third1_L");
+  bullet_follow_bone_names.insert("third1_R");
+  bullet_follow_bone_names.insert("third2_L");
+  bullet_follow_bone_names.insert("third2_R");
+  bullet_follow_bone_names.insert("third3_L");
+  bullet_follow_bone_names.insert("third3_R");
+  bullet_follow_bone_names.insert("little1_L");
+  bullet_follow_bone_names.insert("little1_R");
+  bullet_follow_bone_names.insert("little2_L");
+  bullet_follow_bone_names.insert("little2_R");
+  bullet_follow_bone_names.insert("little3_L");
+  bullet_follow_bone_names.insert("little3_R");
+
+  // assign a dynamic object to each bone
+  for(int i = 0; i < model->bones_.size(); i++) {
+    BulletDynamicObject_t* bullet_dynamic_object = new BulletDynamicObject_t();
+
+    // identify bone and bone tail
+    Bone* followBone = &model->bones_[i];
+    if(bullet_follow_bone_names.find(followBone->ascii_name) == bullet_follow_bone_names.end()) {
+      continue;
+    }
+    Bone* followBoneTail = &model->bones_[followBone->tailIndex];
+
+    // calculate bone endpoints in model space
+    glm::vec3 bone_start(followBone->pos[0], followBone->pos[1], followBone->pos[2]);
+    glm::vec3 bone_end(followBoneTail->pos[0], followBoneTail->pos[1], followBoneTail->pos[2]);
+
+    // calculate bone dimensions
+    float bone_radius = std::min(followBone->dim.x, std::min(followBone->dim.y, followBone->dim.z))*0.5;
+    float bone_length = std::max(glm::distance(bone_start, bone_end) - bone_radius*2, 0.0f);
+
+    // configure dynamic object just like ground
+    bullet_dynamic_object->shape = new btCapsuleShape(bone_radius, bone_length);
+    bullet_dynamic_object->motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, 0, 0)));
+    bullet_dynamic_object->rigidBody = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(0, bullet_dynamic_object->motionState, bullet_dynamic_object->shape, btVector3(0, 0, 0)));
+
+    // register dynamic object to world
+    dynamicsWorld->addRigidBody(bullet_dynamic_object->rigidBody);
+    bullet_dynamic_object->followBone = followBone;
+    bullet_rigid_body_wrappers.push_back(bullet_dynamic_object);
+  }
+
   // http://stackoverflow.com/questions/11985204/how-to-draw-render-a-bullet-physics-collision-body-shape
   dynamicsWorld->setDebugDrawer(GLDebugDrawer::instance());
   GLDebugDrawer::instance()->setDebugMode(true);
 }
 
 static void DeInitSimulation() {
+  // free rigid bodies
+  for(std::vector<BulletDynamicObject_t*>::iterator p = bullet_rigid_body_wrappers.begin();
+      p != bullet_rigid_body_wrappers.end(); p++)
+  {
+    BulletDynamicObject_t* bullet_dynamic_object = *p;
+    dynamicsWorld->removeRigidBody(bullet_dynamic_object->rigidBody);
+    delete bullet_dynamic_object->rigidBody->getMotionState();
+    delete bullet_dynamic_object->rigidBody;
+    delete bullet_dynamic_object->shape;
+  }
+  bullet_rigid_body_wrappers.clear();
+
   dynamicsWorld->removeRigidBody(fall.rigidBody);
   delete fall.rigidBody->getMotionState();
   delete fall.rigidBody;
@@ -351,17 +434,87 @@ static void DeInitSimulation() {
 
 static void StepSimulation() {
   dynamicsWorld->stepSimulation(1 / 60.f, 10);
-  // DBG
-  // btTransform trans;
-  // fall.rigidBody->getMotionState()->getWorldTransform(trans);
-  // std::cout << "sphere height: " << trans.getOrigin().getY() << std::endl;
-#if 1
-  if(simStep > maxSimSteps || !fall.rigidBody->isActive()) {
-#endif
+
+  // make dynamic object follow its assigned bone
+  for(std::vector<BulletDynamicObject_t*>::iterator p = bullet_rigid_body_wrappers.begin();
+      p != bullet_rigid_body_wrappers.end(); p++)
+  {
+    BulletDynamicObject_t* bullet_dynamic_object = *p;
+    Bone* followBone = bullet_dynamic_object->followBone;
+    if(!followBone) {
+        continue;
+    }
+
     // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/MotionStates
     btTransform startTransform;
 
 #if 1
+    // calculate bone endpoints in world space
+    Bone* followBoneTail = &model->bones_[followBone->tailIndex];
+    glm::vec4 bone_start = glm::make_mat4(followBone->matrix)*glm::vec4(0, 0, 0, 1);
+    glm::vec4 bone_end = glm::make_mat4(followBoneTail->matrix)*glm::vec4(0, 0, 0, 1);
+
+    // opengl is right-handed coordinate system
+    // pmd is left-handed coordinate system
+    bone_start = glm::scale(glm::mat4(1), glm::vec3(1, 1, -1))*bone_start;
+    bone_end = glm::scale(glm::mat4(1), glm::vec3(1, 1, -1))*bone_end;
+
+    // point dynamic object along bone
+    glm::vec3 bone_orient = OffsetToOrient(glm::vec3(bone_end - bone_start));
+    glm::mat4 bone_orient_xform_glm = glm::yawPitchRoll(ORIENT_YAW(bone_orient),
+                                                        ORIENT_PITCH(bone_orient),
+                                                        ORIENT_ROLL(bone_orient));
+
+    // point capsule "shape" in default euler orientation
+    bone_orient_xform_glm = bone_orient_xform_glm*GLM_ROTATE(glm::mat4(1), 90.0f, glm::vec3(1, 0, 0));
+
+    // convert glm matrix into bullet matrix
+    btMatrix3x3 bone_orient_xform_bt;
+    for(int i = 0; i<4; i++) {
+      for(int j = 0; j<4; j++) {
+        // glm matrix is column major, bullet matrix is row major
+        bone_orient_xform_bt[i][j] = bone_orient_xform_glm[j][i];
+      }
+    }
+
+    // move dynamic object to bone center
+    glm::vec4 bone_center = (bone_start + bone_end)*0.5f;
+
+    // configure dynamic object position/orientation
+    startTransform = btTransform(bone_orient_xform_bt, btVector3(bone_center.x, bone_center.y, bone_center.z));
+#else
+    startTransform.setFromOpenGLMatrix(followBone->matrix);
+
+    // opengl is right-handed coordinate system
+    // pmd is left-handed coordinate system
+    btTransform flip_z_xform(btMatrix3x3(1, 0, 0,
+                                         0, 1, 0,
+                                         0, 0, -1));
+    startTransform = flip_z_xform*startTransform;
+#endif
+
+    // this is not enough to move a rigid body in bullet..
+    bullet_dynamic_object->rigidBody->getMotionState()->setWorldTransform(startTransform);
+
+    // required step to move a rigid body in bullet
+    // re-adding the rigid body to the world also works
+    bullet_dynamic_object->rigidBody->setMotionState(bullet_dynamic_object->rigidBody->getMotionState());
+
+    // short-cut to moving "relative" position (undesired!)
+    // fall.rigidBody->translate(btVector3(0, fallHeight, 0));
+
+    // required step to wake up deactivated rigid bodies in bullet
+    // dynamic rigid bodies deactivate after remaining static for a while
+    bullet_dynamic_object->rigidBody->activate();
+  }
+
+  // reset falling capsule
+  if(simStep > maxSimSteps || !fall.rigidBody->isActive()) {
+
+    // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/MotionStates
+    btTransform startTransform;
+
+    // randomize start position
     startTransform.setIdentity();
     startTransform.setOrigin(btVector3(0, fallHeight, 0));
     float axis_x = -1+2*rand()/RAND_MAX;
@@ -369,31 +522,8 @@ static void StepSimulation() {
     float axis_z = -1+2*rand()/RAND_MAX;
     float angle  = 2*PI*rand()/RAND_MAX;
     startTransform.setRotation(btQuaternion(axis_x, axis_y, axis_z, angle));
-#else
-    glm::vec4 bone_start = glm::scale(glm::mat4(1), glm::vec3(1, 1, -1))*glm::make_mat4(elbowBone->matrix)*glm::vec4(0, 0, 0, 1);
-    glm::vec4 bone_end = glm::scale(glm::mat4(1), glm::vec3(1, 1, -1))*glm::make_mat4(tailBone->matrix)*glm::vec4(0, 0, 0, 1);
-    glm::vec3 bone_orient = OffsetToOrient(glm::vec3(bone_end - bone_start));
-    glm::mat4 bone_orient_xform_glm = glm::yawPitchRoll(ORIENT_YAW(bone_orient),
-                                                        ORIENT_PITCH(bone_orient),
-                                                        ORIENT_ROLL(bone_orient));
-    bone_orient_xform_glm *= GLM_ROTATE(glm::mat4(1), 90.0f, glm::vec3(1, 0, 0));
-    btMatrix3x3 bone_orient_xform_bt;
-    for(int i = 0; i<4; i++) {
-        for(int j = 0; j<4; j++) {
-            bone_orient_xform_bt[i][j] = bone_orient_xform_glm[j][i];
-        }
-    }
-    glm::vec4 bone_center = (bone_start + bone_end)*0.5f;
-    startTransform = btTransform(bone_orient_xform_bt, btVector3(bone_center.x, bone_center.y, bone_center.z));
-    //startTransform.setFromOpenGLMatrix(elbowBone->matrix);
-    //btMatrix3x3 m(1, 0, 0,
-    //              0, 1, 0,
-    //              0, 0, -1);
-    //btTransform t(m);
-    //startTransform = t*startTransform;
-#endif
 
-    // this is not enough to move an rigid body in bullet..
+    // this is not enough to move a rigid body in bullet..
     fall.rigidBody->getMotionState()->setWorldTransform(startTransform);
 
     // required step to move a rigid body in bullet
@@ -403,15 +533,13 @@ static void StepSimulation() {
     // short-cut to moving "relative" position (undesired!)
     // fall.rigidBody->translate(btVector3(0, fallHeight, 0));
 
-    // required step to wake-up deactivated rigid bodies in bullet
+    // required step to wake up deactivated rigid bodies in bullet
     // dynamic rigid bodies deactivate after remaining static for a while
     fall.rigidBody->activate();
 
     simStep = 0;
     return;
-#if 1
   }
-#endif
   simStep++;
 }
 #endif
