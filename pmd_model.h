@@ -128,6 +128,8 @@ struct Bone {
   Vector3 min;
   Vector3 max;
   Vector3 dim;
+
+  void* bulletDynamicObject;
 };
 
 struct IK {

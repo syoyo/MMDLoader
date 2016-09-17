@@ -73,7 +73,7 @@ Syoyo Fujita(syoyo@lighttransport.com)
 
 ### Contributor(s)
 
-Jerry Chen(onlyuser@gmail.com) : glm, Euler camera, Bullet physics, split screen vr
+Jerry Chen(onlyuser@gmail.com) : glm, Bullet physics, Euler camera, split screen vr
 
 ## License
 

@@ -368,10 +368,14 @@ static void InitSimulation() {
   bullet_follow_bone_names.insert("little3_L");
   bullet_follow_bone_names.insert("little3_R");
 
+  // clear dynamic object link
+  for(int k = 0; k < model->bones_.size(); k++) {
+    Bone* followBone = &model->bones_[k];
+    followBone->bulletDynamicObject = NULL;
+  }
+
   // assign a dynamic object to each bone
   for(int i = 0; i < model->bones_.size(); i++) {
-    BulletDynamicObject_t* bullet_dynamic_object = new BulletDynamicObject_t();
-
     // identify bone and bone tail
     Bone* followBone = &model->bones_[i];
     if(bullet_follow_bone_names.find(followBone->ascii_name) == bullet_follow_bone_names.end() &&
@@ -401,6 +405,7 @@ static void InitSimulation() {
 #endif
 
     // configure dynamic object just like ground
+    BulletDynamicObject_t* bullet_dynamic_object = new BulletDynamicObject_t();
     float capsule_radius = std::min(followBone->dim.x, std::min(followBone->dim.y, followBone->dim.z))*0.5;
     if(!followBone->hasVertices) {
       continue;
@@ -414,6 +419,30 @@ static void InitSimulation() {
     dynamicsWorld->addRigidBody(bullet_dynamic_object->rigidBody);
     bullet_dynamic_object->followBone = followBone;
     bullet_rigid_body_wrappers.push_back(bullet_dynamic_object);
+
+    followBone->bulletDynamicObject = bullet_dynamic_object;
+  }
+
+  // generate string constraints (FIX-ME!)
+  // http://bulletphysics.org/mediawiki-1.5.8/index.php/Simple_Chain
+  for(int j = 0; j < model->bones_.size(); j++) {
+    Bone* followBone = &model->bones_[j];
+    if(!followBone->isHair) {
+      continue;
+    }
+    Bone* followBoneTail = &model->bones_[followBone->tailIndex];
+    if(!followBone->bulletDynamicObject || !followBoneTail->bulletDynamicObject) {
+      continue;
+    }
+
+    btRigidBody* b1 = reinterpret_cast<BulletDynamicObject_t*>(followBone->bulletDynamicObject)->rigidBody;
+    btRigidBody* b2 = reinterpret_cast<BulletDynamicObject_t*>(followBoneTail->bulletDynamicObject)->rigidBody;
+
+    btPoint2PointConstraint* leftSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(-0.5,1,0), btVector3(-0.5,-1,0));
+    dynamicsWorld->addConstraint(leftSpring);
+
+    btPoint2PointConstraint* rightSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(0.5,1,0), btVector3(0.5,-1,0));
+    dynamicsWorld->addConstraint(rightSpring);
   }
 
   // http://stackoverflow.com/questions/11985204/how-to-draw-render-a-bullet-physics-collision-body-shape
