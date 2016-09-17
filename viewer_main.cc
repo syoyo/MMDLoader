@@ -368,28 +368,28 @@ static void InitSimulation() {
   bullet_follow_bone_names.insert("little3_L");
   bullet_follow_bone_names.insert("little3_R");
 
-  // clear dynamic object link
-  for(int k = 0; k < model->bones_.size(); k++) {
-    Bone* followBone = &model->bones_[k];
+  // clear dynamic object lini
+  for(int i = 0; i < model->bones_.size(); i++) {
+    Bone* followBone = &model->bones_[i];
     followBone->bulletDynamicObject = NULL;
   }
 
   // assign a dynamic object to each bone
-  for(int i = 0; i < model->bones_.size(); i++) {
+  for(int j = 0; j < model->bones_.size(); j++) {
     // identify bone and bone tail
-    Bone* followBone = &model->bones_[i];
+    Bone* followBone = &model->bones_[j];
     if(bullet_follow_bone_names.find(followBone->ascii_name) == bullet_follow_bone_names.end() &&
         !followBone->isHair)
     {
       // skip if not in "bullet_follow_bone_names" and not hair
       continue;
     }
-    Bone* followBoneTail = &model->bones_[followBone->tailIndex];
+    Bone* followBoneOther = followBone->isHair ? &model->bones_[followBone->parentIndex] : &model->bones_[followBone->tailIndex];
 
     // calculate bone dimensions
 #ifdef ENABLE_GLM
     glm::vec3 bone_start(followBone->pos[0], followBone->pos[1], followBone->pos[2]);
-    glm::vec3 bone_end(followBoneTail->pos[0], followBoneTail->pos[1], followBoneTail->pos[2]);
+    glm::vec3 bone_end(followBoneOther->pos[0], followBoneOther->pos[1], followBoneOther->pos[2]);
     float bone_length = glm::distance(bone_start, bone_end);
 #else
     Vector3 bone_start;
@@ -397,9 +397,9 @@ static void InitSimulation() {
     bone_start.y = followBone->pos[1];
     bone_start.z = followBone->pos[2];
     Vector3 bone_end;
-    bone_end.x = followBoneTail->pos[0];
-    bone_end.y = followBoneTail->pos[1];
-    bone_end.z = followBoneTail->pos[2];
+    bone_end.x = followBoneOther->pos[0];
+    bone_end.y = followBoneOther->pos[1];
+    bone_end.z = followBoneOther->pos[2];
     Vector3 bone_delta;
     VSub(bone_delta, bone_end, bone_start);
     float bone_length = VLength(bone_delta);
@@ -433,49 +433,50 @@ static void InitSimulation() {
     followBone->bulletDynamicObject = bullet_dynamic_object;
   }
 
-  // generate spring constraints (FIX-ME!)
+  // generate "simple chain" constraints (FIX-ME!)
   // http://bulletphysics.org/mediawiki-1.5.8/index.php/Simple_Chain
-
-  // connect base hair bones to head
-  for(int p = 0; p < model->bones_.size(); p++) {
-    Bone* followBoneTail = &model->bones_[p];
-    if(!followBoneTail->isBaseHair) {
+  for(int k = 0; k < model->bones_.size(); k++) {
+    Bone* followBone = &model->bones_[k];
+    if(!(followBone->isHair && !followBone->isBaseHair)) {
       continue;
     }
-    Bone* followBone = &model->bones_[followBoneTail->parentIndex];
-    if(!followBone->bulletDynamicObject || !followBoneTail->bulletDynamicObject) {
-      continue;
-    }
-    assert(followBone->ascii_name == "head");
-
-    btRigidBody* b1 = reinterpret_cast<BulletDynamicObject_t*>(followBone->bulletDynamicObject)->rigidBody;
-    btRigidBody* b2 = reinterpret_cast<BulletDynamicObject_t*>(followBoneTail->bulletDynamicObject)->rigidBody;
-
-    btPoint2PointConstraint* leftSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(-0.5,1,0), btVector3(-0.5,-1,0));
-    dynamicsWorld->addConstraint(leftSpring);
-
-    btPoint2PointConstraint* rightSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(0.5,1,0), btVector3(0.5,-1,0));
-    dynamicsWorld->addConstraint(rightSpring);
-  }
-
-  // connect non-base hair bones to their parent
-  for(int q = 0; q < model->bones_.size(); q++) {
-    Bone* followBone = &model->bones_[q];
-    if(!followBone->isHair) {
-      continue;
-    }
-    Bone* followBoneTail = &model->bones_[followBone->tailIndex];
-    if(!followBone->bulletDynamicObject || !followBoneTail->bulletDynamicObject) {
+    Bone* followBoneParent = &model->bones_[followBone->parentIndex];
+    if(!followBone->bulletDynamicObject || !followBoneParent->bulletDynamicObject) {
+      // DBG
+      //std::cout << "SKIPPING: " << followBone->ascii_name << std::endl;
       continue;
     }
 
     btRigidBody* b1 = reinterpret_cast<BulletDynamicObject_t*>(followBone->bulletDynamicObject)->rigidBody;
-    btRigidBody* b2 = reinterpret_cast<BulletDynamicObject_t*>(followBoneTail->bulletDynamicObject)->rigidBody;
+    btRigidBody* b2 = reinterpret_cast<BulletDynamicObject_t*>(followBoneParent->bulletDynamicObject)->rigidBody;
 
-    btPoint2PointConstraint* leftSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(-0.5,1,0), btVector3(-0.5,-1,0));
+    // calculate bone dimensions
+#ifdef ENABLE_GLM
+    glm::vec3 bone_start(followBone->pos[0], followBone->pos[1], followBone->pos[2]);
+    glm::vec3 bone_end(followBoneParent->pos[0], followBoneParent->pos[1], followBoneParent->pos[2]);
+    float bone_length = glm::distance(bone_start, bone_end);
+#else
+    Vector3 bone_start;
+    bone_start.x = followBone->pos[0];
+    bone_start.y = followBone->pos[1];
+    bone_start.z = followBone->pos[2];
+    Vector3 bone_end;
+    bone_end.x = followBoneParent->pos[0];
+    bone_end.y = followBoneParent->pos[1];
+    bone_end.z = followBoneParent->pos[2];
+    Vector3 bone_delta;
+    VSub(bone_delta, bone_end, bone_start);
+    float bone_length = VLength(bone_delta);
+#endif
+    // DBG
+    //std::cout << "UP_LINK: " << followBone->ascii_name << " ==> " << followBoneParent->ascii_name << " (" << bone_length << ")" << std::endl;
+
+    float pivot_offset = bone_length*0.5;
+
+    btPoint2PointConstraint* leftSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(-0.5, pivot_offset, 0), btVector3(-0.5, -pivot_offset,0));
     dynamicsWorld->addConstraint(leftSpring);
 
-    btPoint2PointConstraint* rightSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(0.5,1,0), btVector3(0.5,-1,0));
+    btPoint2PointConstraint* rightSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(0.5, pivot_offset, 0), btVector3(0.5, -pivot_offset, 0));
     dynamicsWorld->addConstraint(rightSpring);
   }
 
@@ -585,7 +586,7 @@ static void StepSimulation() {
     // re-adding the rigid body to the world also works
     bullet_dynamic_object->rigidBody->setMotionState(bullet_dynamic_object->rigidBody->getMotionState());
 
-    // short-cut to moving "relative" position (undesired!)
+    // shortcut to moving "relative" position (undesired!)
     // fall.rigidBody->translate(btVector3(0, fallHeight, 0));
 
     // required step to wake up deactivated rigid bodies in bullet
@@ -615,7 +616,7 @@ static void StepSimulation() {
     // re-adding the rigid body to the world also works
     fall.rigidBody->setMotionState(fall.rigidBody->getMotionState());
 
-    // short-cut to moving "relative" position (undesired!)
+    // shortcut to moving "relative" position (undesired!)
     // fall.rigidBody->translate(btVector3(0, fallHeight, 0));
 
     // required step to wake up deactivated rigid bodies in bullet
@@ -1769,7 +1770,7 @@ void keyboard(unsigned char k, int x, int y) {
   }
 }
 
-static void IdentifyHairBone() {
+static void IdentifyHairBones() {
   Bone* head = NULL;
   for(int i = 0; i < model->bones_.size(); i++) {
     if(model->bones_[i].ascii_name == "head") {
@@ -1796,11 +1797,14 @@ static void IdentifyHairBone() {
       }
     }
   }
+  hair_flood_fill.erase(head);
   for(int k = 0; k < model->bones_.size(); k++) {
-    model->bones_[k].isHair =
-        (hair_flood_fill.find(&model->bones_[model->bones_[k].parentIndex]) != hair_flood_fill.end());
-    model->bones_[k].isBaseHair =
-        (model->bones_[k].isHair && &model->bones_[model->bones_[k].parentIndex] == head);
+    model->bones_[k].isHair = (hair_flood_fill.find(&model->bones_[k]) != hair_flood_fill.end());
+    model->bones_[k].isBaseHair = (model->bones_[k].isHair && &model->bones_[model->bones_[k].parentIndex] == head);
+    // DBG
+    //if(model->bones_[k].isBaseHair) {
+    //  std::cout << "BASE_HAIR: " << model->bones_[k].ascii_name << std::endl;
+    //}
   }
 }
 
@@ -1823,7 +1827,7 @@ void load(char *pmdmodel, char *vmdmodel) {
   DumpBone();
 
   CalculateBboxMinMax();
-  IdentifyHairBone();
+  IdentifyHairBones();
 }
 
 void init() {
