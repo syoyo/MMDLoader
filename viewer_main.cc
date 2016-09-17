@@ -376,7 +376,7 @@ static void InitSimulation() {
 
   // assign a dynamic object to each bone
   for(int j = 0; j < model->bones_.size(); j++) {
-    // identify bone and bone tail
+    // identify bone endpoints
     Bone* followBone = &model->bones_[j];
     if(bullet_follow_bone_names.find(followBone->ascii_name) == bullet_follow_bone_names.end() &&
         !followBone->isHair)
@@ -384,7 +384,7 @@ static void InitSimulation() {
       // skip if not in "bullet_follow_bone_names" and not hair
       continue;
     }
-    Bone* followBoneOther = followBone->isHair ? &model->bones_[followBone->parentIndex] : &model->bones_[followBone->tailIndex];
+    Bone* followBoneOther = &model->bones_[followBone->isHair ? followBone->parentIndex : followBone->tailIndex];
 
     // calculate bone dimensions
 #ifdef ENABLE_GLM
@@ -415,7 +415,7 @@ static void InitSimulation() {
     }
     bullet_dynamic_object->shape = new btCapsuleShape(capsule_radius, capsule_length);
     if(followBone->isHair && !followBone->isBaseHair) {
-      bullet_dynamic_object->motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, fallHeight, 0)));
+      bullet_dynamic_object->motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, 0, 0)));
       float fallMass = 1;
       btVector3 fallInertia(0, 0, 0);
       bullet_dynamic_object->shape->calculateLocalInertia(fallMass, fallInertia);
@@ -536,9 +536,9 @@ static void StepSimulation() {
 
 #ifdef ENABLE_GLM
     // calculate bone endpoints in world space
-    Bone* followBoneTail = &model->bones_[followBone->tailIndex];
+    Bone* followBoneOther = &model->bones_[followBone->isHair ? followBone->parentIndex : followBone->tailIndex];
     glm::vec4 bone_start = glm::make_mat4(followBone->matrix)*glm::vec4(0, 0, 0, 1);
-    glm::vec4 bone_end = glm::make_mat4(followBoneTail->matrix)*glm::vec4(0, 0, 0, 1);
+    glm::vec4 bone_end = glm::make_mat4(followBoneOther->matrix)*glm::vec4(0, 0, 0, 1);
 
     // opengl is right-handed coordinate system
     // pmd is left-handed coordinate system
