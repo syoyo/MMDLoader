@@ -433,7 +433,7 @@ static void InitSimulation() {
     followBone->bulletDynamicObject = bullet_dynamic_object;
   }
 
-  // generate "simple chain" constraints (FIX-ME!)
+  // generate "simple chain" constraints
   // http://bulletphysics.org/mediawiki-1.5.8/index.php/Simple_Chain
   for(int k = 0; k < model->bones_.size(); k++) {
     Bone* followBone = &model->bones_[k];
@@ -469,7 +469,7 @@ static void InitSimulation() {
     float bone_length = VLength(bone_delta);
 #endif
     // DBG
-    //std::cout << "UP_LINK: " << followBone->ascii_name << " ==> " << followBoneParent->ascii_name << " (" << bone_length << ")" << std::endl;
+    //std::cout << "HAIR: " << followBone->ascii_name << " ==> " << followBoneParent->ascii_name << " (" << bone_length << ")" << std::endl;
 
     float pivot_offset = bone_length*0.5;
 
@@ -528,6 +528,14 @@ static void StepSimulation() {
       continue;
     }
     if(followBone->isHair && !followBone->isBaseHair) {
+      // DBG (FIX-ME! -- crazy hair)
+      //if(followBone->isHair) {
+      //  btTransform trans;
+      //  bullet_dynamic_object->rigidBody->getMotionState()->getWorldTransform(trans);
+      //  followBone->pos[0] = trans.getOrigin().getX();
+      //  followBone->pos[1] = trans.getOrigin().getY();
+      //  followBone->pos[2] = -trans.getOrigin().getZ();
+      //}
       continue;
     }
 
