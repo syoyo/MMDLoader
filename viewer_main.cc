@@ -112,6 +112,7 @@ static bool draw_bones = true;
 static bool draw_wireframe = false;
 static bool print_bone_info = false;
 static bool draw_bullet_scene = false;
+static bool draw_bullet_result = false;
 static int split_screen_vr_mode = 0;
 
 PMDModel *model = NULL;
@@ -1416,6 +1417,34 @@ static void DrawBulletScene() {
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
 }
+
+static void DrawBulletResult() {
+  glDisable(GL_LIGHTING);
+  //glDisable(GL_DEPTH_TEST);
+
+  for(std::vector<BulletDynamicObject_t*>::iterator p = bullet_dynamic_objects.begin();
+      p != bullet_dynamic_objects.end(); p++)
+  {
+    BulletDynamicObject_t* bullet_dynamic_object = *p;
+    Bone* followBone = bullet_dynamic_object->followBone;
+    if(!followBone) {
+      continue;
+    }
+    if(followBone->isHair) {
+      btTransform trans;
+      bullet_dynamic_object->rigidBody->getMotionState()->getWorldTransform(trans);
+      glPushMatrix();
+      glTranslatef(trans.getOrigin().getX(), trans.getOrigin().getY(), trans.getOrigin().getZ());
+      glColor3f(1, 0, 0);
+      glutWireCube(1);
+      glPopMatrix();
+    }
+  }
+
+  //glEnable(GL_DEPTH_TEST);
+  glEnable(GL_LIGHTING);
+}
+
 #endif
 
 void build_rot_matrix(GLfloat m[4][4]) {
@@ -1531,6 +1560,10 @@ void display_for_one_eye(int eye_index, float eye_distance) {
 #ifdef ENABLE_BULLET
   if(draw_bullet_scene) {
     DrawBulletScene();
+  }
+
+  if(draw_bullet_result) {
+    DrawBulletResult();
   }
 #endif
 }
@@ -1760,6 +1793,9 @@ void keyboard(unsigned char k, int x, int y) {
     break;
   case 'p':
     draw_bullet_scene = !draw_bullet_scene;
+    break;
+  case 'r':
+    draw_bullet_result = !draw_bullet_result;
     break;
   case 'v':
     split_screen_vr_mode = (split_screen_vr_mode+1)%3;
