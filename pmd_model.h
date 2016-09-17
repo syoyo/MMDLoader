@@ -123,6 +123,7 @@ struct Bone {
   bool hasVertices;
   bool isLeg;
   bool isHair;
+  bool isBaseHair;
   bool updated;
 
   Vector3 min;

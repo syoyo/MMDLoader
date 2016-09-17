@@ -289,7 +289,7 @@ struct BulletDynamicObject_t {
 };
 
 BulletDynamicObject_t ground, fall;
-std::vector<BulletDynamicObject_t*> bullet_rigid_body_wrappers;
+std::vector<BulletDynamicObject_t*> bullet_dynamic_objects;
 std::set<std::string> bullet_follow_bone_names;
 
 // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/Hello_World
@@ -412,18 +412,26 @@ static void InitSimulation() {
     }
     float capsule_length = std::max(bone_length - capsule_radius*2, 0.0f);
     bullet_dynamic_object->shape = new btCapsuleShape(capsule_radius, capsule_length);
-    bullet_dynamic_object->motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, 0, 0)));
-    bullet_dynamic_object->rigidBody = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(0, bullet_dynamic_object->motionState, bullet_dynamic_object->shape, btVector3(0, 0, 0)));
+    if(followBone->isHair && !followBone->isBaseHair) {
+      bullet_dynamic_object->motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, fallHeight, 0)));
+      float fallMass = 1;
+      btVector3 fallInertia(0, 0, 0);
+      bullet_dynamic_object->shape->calculateLocalInertia(fallMass, fallInertia);
+      bullet_dynamic_object->rigidBody = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(fallMass, bullet_dynamic_object->motionState, bullet_dynamic_object->shape, fallInertia));
+    } else {
+      bullet_dynamic_object->motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, 0, 0)));
+      bullet_dynamic_object->rigidBody = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(0, bullet_dynamic_object->motionState, bullet_dynamic_object->shape, btVector3(0, 0, 0)));
+    }
 
     // register dynamic object to world
     dynamicsWorld->addRigidBody(bullet_dynamic_object->rigidBody);
     bullet_dynamic_object->followBone = followBone;
-    bullet_rigid_body_wrappers.push_back(bullet_dynamic_object);
+    bullet_dynamic_objects.push_back(bullet_dynamic_object);
 
     followBone->bulletDynamicObject = bullet_dynamic_object;
   }
 
-  // generate string constraints (FIX-ME!)
+  // generate spring constraints (FIX-ME!)
   // http://bulletphysics.org/mediawiki-1.5.8/index.php/Simple_Chain
   for(int j = 0; j < model->bones_.size(); j++) {
     Bone* followBone = &model->bones_[j];
@@ -452,8 +460,8 @@ static void InitSimulation() {
 
 static void DeInitSimulation() {
   // free rigid bodies
-  for(std::vector<BulletDynamicObject_t*>::iterator p = bullet_rigid_body_wrappers.begin();
-      p != bullet_rigid_body_wrappers.end(); p++)
+  for(std::vector<BulletDynamicObject_t*>::iterator p = bullet_dynamic_objects.begin();
+      p != bullet_dynamic_objects.end(); p++)
   {
     BulletDynamicObject_t* bullet_dynamic_object = *p;
     dynamicsWorld->removeRigidBody(bullet_dynamic_object->rigidBody);
@@ -461,7 +469,7 @@ static void DeInitSimulation() {
     delete bullet_dynamic_object->rigidBody;
     delete bullet_dynamic_object->shape;
   }
-  bullet_rigid_body_wrappers.clear();
+  bullet_dynamic_objects.clear();
 
   dynamicsWorld->removeRigidBody(fall.rigidBody);
   delete fall.rigidBody->getMotionState();
@@ -484,13 +492,16 @@ static void StepSimulation() {
   dynamicsWorld->stepSimulation(1 / 60.f, 10);
 
   // make dynamic object follow its assigned bone
-  for(std::vector<BulletDynamicObject_t*>::iterator p = bullet_rigid_body_wrappers.begin();
-      p != bullet_rigid_body_wrappers.end(); p++)
+  for(std::vector<BulletDynamicObject_t*>::iterator p = bullet_dynamic_objects.begin();
+      p != bullet_dynamic_objects.end(); p++)
   {
     BulletDynamicObject_t* bullet_dynamic_object = *p;
     Bone* followBone = bullet_dynamic_object->followBone;
     if(!followBone) {
-        continue;
+      continue;
+    }
+    if(followBone->isHair && !followBone->isBaseHair) {
+      continue;
     }
 
     // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/MotionStates
@@ -1760,6 +1771,8 @@ static void IdentifyHairBone() {
   for(int k = 0; k < model->bones_.size(); k++) {
     model->bones_[k].isHair =
         (hair_flood_fill.find(&model->bones_[model->bones_[k].parentIndex]) != hair_flood_fill.end());
+    model->bones_[k].isBaseHair =
+        (model->bones_[k].isHair && &model->bones_[model->bones_[k].parentIndex] == head);
   }
 }
 
