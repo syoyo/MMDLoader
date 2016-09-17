@@ -381,6 +381,7 @@ static void InitSimulation() {
     if(bullet_follow_bone_names.find(followBone->ascii_name) == bullet_follow_bone_names.end() &&
         !followBone->isHair)
     {
+      // skip if not in "bullet_follow_bone_names" and not hair
       continue;
     }
     Bone* followBoneTail = &model->bones_[followBone->tailIndex];
@@ -406,11 +407,12 @@ static void InitSimulation() {
 
     // configure dynamic object just like ground
     BulletDynamicObject_t* bullet_dynamic_object = new BulletDynamicObject_t();
-    float capsule_radius = std::min(followBone->dim.x, std::min(followBone->dim.y, followBone->dim.z))*0.5;
-    if(!followBone->hasVertices) {
-      continue;
+    float capsule_radius = 0;
+    float capsule_length = 0;
+    if(followBone->hasVertices) {
+      capsule_radius = std::min(followBone->dim.x, std::min(followBone->dim.y, followBone->dim.z))*0.5;
+      capsule_length = std::max(bone_length - capsule_radius*2, 0.0f);
     }
-    float capsule_length = std::max(bone_length - capsule_radius*2, 0.0f);
     bullet_dynamic_object->shape = new btCapsuleShape(capsule_radius, capsule_length);
     if(followBone->isHair && !followBone->isBaseHair) {
       bullet_dynamic_object->motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, fallHeight, 0)));
@@ -433,8 +435,32 @@ static void InitSimulation() {
 
   // generate spring constraints (FIX-ME!)
   // http://bulletphysics.org/mediawiki-1.5.8/index.php/Simple_Chain
-  for(int j = 0; j < model->bones_.size(); j++) {
-    Bone* followBone = &model->bones_[j];
+
+  // connect base hair bones to head
+  for(int p = 0; p < model->bones_.size(); p++) {
+    Bone* followBoneTail = &model->bones_[p];
+    if(!followBoneTail->isBaseHair) {
+      continue;
+    }
+    Bone* followBone = &model->bones_[followBoneTail->parentIndex];
+    if(!followBone->bulletDynamicObject || !followBoneTail->bulletDynamicObject) {
+      continue;
+    }
+    assert(followBone->ascii_name == "head");
+
+    btRigidBody* b1 = reinterpret_cast<BulletDynamicObject_t*>(followBone->bulletDynamicObject)->rigidBody;
+    btRigidBody* b2 = reinterpret_cast<BulletDynamicObject_t*>(followBoneTail->bulletDynamicObject)->rigidBody;
+
+    btPoint2PointConstraint* leftSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(-0.5,1,0), btVector3(-0.5,-1,0));
+    dynamicsWorld->addConstraint(leftSpring);
+
+    btPoint2PointConstraint* rightSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(0.5,1,0), btVector3(0.5,-1,0));
+    dynamicsWorld->addConstraint(rightSpring);
+  }
+
+  // connect non-base hair bones to their parent
+  for(int q = 0; q < model->bones_.size(); q++) {
+    Bone* followBone = &model->bones_[q];
     if(!followBone->isHair) {
       continue;
     }
@@ -1525,7 +1551,9 @@ void display() {
   glutSwapBuffers();
 
 #ifdef ENABLE_BULLET
-  StepSimulation();
+  if(do_animate) {
+    StepSimulation();
+  }
 #endif
 }
 
