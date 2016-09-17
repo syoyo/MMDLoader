@@ -120,7 +120,9 @@ struct Bone {
 
   float motionOffsetPos[3];
 
+  bool hasVertices;
   bool isLeg;
+  bool isHair;
   bool updated;
 
   Vector3 min;

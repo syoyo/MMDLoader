@@ -7,6 +7,7 @@
 #include <iostream>
 #include <vector>
 #include <set>
+#include <sstream>
 #include <algorithm>
 #include <cmath>
 
@@ -373,7 +374,9 @@ static void InitSimulation() {
 
     // identify bone and bone tail
     Bone* followBone = &model->bones_[i];
-    if(bullet_follow_bone_names.find(followBone->ascii_name) == bullet_follow_bone_names.end()) {
+    if(bullet_follow_bone_names.find(followBone->ascii_name) == bullet_follow_bone_names.end() &&
+        !followBone->isHair)
+    {
       continue;
     }
     Bone* followBoneTail = &model->bones_[followBone->tailIndex];
@@ -399,6 +402,9 @@ static void InitSimulation() {
 
     // configure dynamic object just like ground
     float capsule_radius = std::min(followBone->dim.x, std::min(followBone->dim.y, followBone->dim.z))*0.5;
+    if(!followBone->hasVertices) {
+      continue;
+    }
     float capsule_length = std::max(bone_length - capsule_radius*2, 0.0f);
     bullet_dynamic_object->shape = new btCapsuleShape(capsule_radius, capsule_length);
     bullet_dynamic_object->motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, 0, 0)));
@@ -613,6 +619,7 @@ static void CalculateBboxMinMax() {
     model->bones_[i].max.x = -LARGE_NUMBER;
     model->bones_[i].max.y = -LARGE_NUMBER;
     model->bones_[i].max.z = -LARGE_NUMBER;
+    model->bones_[i].hasVertices = false;
   }
   for (int j = 0; j < model->vertices_.size(); j++) {
     PMDVertex &pv = model->vertices_[j];
@@ -627,6 +634,7 @@ static void CalculateBboxMinMax() {
     model->bones_[b0].max.x = std::max(model->bones_[b0].max.x, p0.x);
     model->bones_[b0].max.y = std::max(model->bones_[b0].max.y, p0.y);
     model->bones_[b0].max.z = std::max(model->bones_[b0].max.z, p0.z);
+    model->bones_[b0].hasVertices = true;
   }
 
   // calculate static scene bbox
@@ -1693,6 +1701,39 @@ void keyboard(unsigned char k, int x, int y) {
   }
 }
 
+static void IdentifyHairBone() {
+  Bone* head = NULL;
+  for(int i = 0; i < model->bones_.size(); i++) {
+    if(model->bones_[i].ascii_name == "head") {
+      head = &model->bones_[i];
+      break;
+    }
+  }
+  std::set<Bone*> hair_flood_fill;
+  hair_flood_fill.insert(head);
+  int n = 0;
+  bool change = true;
+  while(change) {
+    change = false;
+    for(int j = 0; j < model->bones_.size(); j++) {
+      if(model->bones_[j].ascii_name.empty() &&
+          hair_flood_fill.find(&model->bones_[model->bones_[j].parentIndex]) != hair_flood_fill.end())
+      {
+        std::stringstream ss;
+        ss << "hair" << n;
+        model->bones_[j].ascii_name = ss.str();
+        hair_flood_fill.insert(&model->bones_[j]);
+        change = true;
+        n++;
+      }
+    }
+  }
+  for(int k = 0; k < model->bones_.size(); k++) {
+    model->bones_[k].isHair =
+        (hair_flood_fill.find(&model->bones_[model->bones_[k].parentIndex]) != hair_flood_fill.end());
+  }
+}
+
 void load(char *pmdmodel, char *vmdmodel) {
   PMDReader pmdreader;
   model = pmdreader.LoadFromFile(pmdmodel);
@@ -1712,6 +1753,7 @@ void load(char *pmdmodel, char *vmdmodel) {
   DumpBone();
 
   CalculateBboxMinMax();
+  IdentifyHairBone();
 }
 
 void init() {
