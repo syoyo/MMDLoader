@@ -1843,8 +1843,15 @@ static void IdentifyHairBones() {
   }
   hair_flood_fill.erase(head);
   for(int k = 0; k < model->bones_.size(); k++) {
+    // heuristic to identify hair bones:
+    // if current bone is connected to head bone directly/indirectly, current bone is a hair bone
     model->bones_[k].isHair = (hair_flood_fill.find(&model->bones_[k]) != hair_flood_fill.end());
-    model->bones_[k].isStaticHair = (model->bones_[k].isHair && !model->bones_[model->bones_[k].parentIndex].tailIndex);
+
+    // heuristic to identify static hair bones:
+    // if parent bone's tail index is illegal, parent bone must be a diverging bone
+    // if parent bone is a diverging bone, current bone must be excluded from physics simulation
+    model->bones_[k].isStaticHair =
+        (model->bones_[k].isHair && !model->bones_[model->bones_[k].parentIndex].tailIndex);
     // DBG
     //if(model->bones_[k].isStaticHair) {
     //  std::cout << "STATIC_HAIR: " << model->bones_[k].ascii_name << std::endl;
