@@ -415,7 +415,7 @@ static void InitSimulation() {
       capsule_length = std::max(bone_length - capsule_radius*2, 0.0f);
     }
     bullet_dynamic_object->shape = new btCapsuleShape(capsule_radius, capsule_length);
-    if(followBone->isHair && !followBone->isBaseHair) {
+    if(followBone->isHair && !followBone->isStaticHair) {
       bullet_dynamic_object->motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, 0, 0)));
       float fallMass = 1;
       btVector3 fallInertia(0, 0, 0);
@@ -438,7 +438,7 @@ static void InitSimulation() {
   // http://bulletphysics.org/mediawiki-1.5.8/index.php/Simple_Chain
   for(int k = 0; k < model->bones_.size(); k++) {
     Bone* followBone = &model->bones_[k];
-    if(!(followBone->isHair && !followBone->isBaseHair)) {
+    if(!followBone->isHair || followBone->isStaticHair) {
       continue;
     }
     Bone* followBoneParent = &model->bones_[followBone->parentIndex];
@@ -528,7 +528,7 @@ static void StepSimulation() {
     if(!followBone) {
       continue;
     }
-    if(followBone->isHair && !followBone->isBaseHair) {
+    if(followBone->isHair && !followBone->isStaticHair) {
       // DBG (FIX-ME! -- crazy hair)
       //if(followBone->isHair) {
       //  btTransform trans;
@@ -1844,10 +1844,10 @@ static void IdentifyHairBones() {
   hair_flood_fill.erase(head);
   for(int k = 0; k < model->bones_.size(); k++) {
     model->bones_[k].isHair = (hair_flood_fill.find(&model->bones_[k]) != hair_flood_fill.end());
-    model->bones_[k].isBaseHair = (model->bones_[k].isHair && &model->bones_[model->bones_[k].parentIndex] == head);
+    model->bones_[k].isStaticHair = (model->bones_[k].isHair && !model->bones_[model->bones_[k].parentIndex].tailIndex);
     // DBG
-    //if(model->bones_[k].isBaseHair) {
-    //  std::cout << "BASE_HAIR: " << model->bones_[k].ascii_name << std::endl;
+    //if(model->bones_[k].isStaticHair) {
+    //  std::cout << "STATIC_HAIR: " << model->bones_[k].ascii_name << std::endl;
     //}
   }
 }
