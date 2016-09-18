@@ -1891,11 +1891,11 @@ void load(char *pmdmodel, char *vmdmodel) {
   IdentifyChainBones("head", NULL);
 
 #ifdef ENABLE_EXTRA_PHYSICS
-  // DBG (FIX-ME! -- unruly skirt/sleaves!)
+  // DBG (FIX-ME! -- unruly skirt/sleeves!)
   IdentifyChainBones("lower_body", NULL);
   std::set<std::string> exception_list;
-  exception_list.insert("sleave_L");
-  exception_list.insert("sleave_R");
+  exception_list.insert("sleeve_L");
+  exception_list.insert("sleeve_R");
   exception_list.insert("cuff_L");
   exception_list.insert("cuff_R");
   IdentifyChainBones("elbow_L", &exception_list);
