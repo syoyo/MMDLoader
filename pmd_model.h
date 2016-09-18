@@ -122,8 +122,8 @@ struct Bone {
 
   bool hasVertices;
   bool isLeg;
-  bool isHair;
-  bool isStaticHair;
+  bool isChain;
+  bool isPinnedChain;
   bool updated;
 
   Vector3 min;

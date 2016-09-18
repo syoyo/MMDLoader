@@ -380,12 +380,13 @@ static void InitSimulation() {
     // identify bone endpoints
     Bone* followBone = &model->bones_[j];
     if(bullet_follow_bone_names.find(followBone->ascii_name) == bullet_follow_bone_names.end() &&
-        !followBone->isHair)
+        !followBone->isChain)
     {
-      // skip if not in "bullet_follow_bone_names" and not hair
+      // skip if not in "bullet_follow_bone_names" and not chain bone
       continue;
     }
-    Bone* followBoneOther = &model->bones_[followBone->isHair ? followBone->parentIndex : followBone->tailIndex];
+    // chain bones link up, non-chain bones link down
+    Bone* followBoneOther = &model->bones_[followBone->isChain ? followBone->parentIndex : followBone->tailIndex];
 
     // calculate bone dimensions
 #ifdef ENABLE_GLM
@@ -415,7 +416,7 @@ static void InitSimulation() {
       capsule_length = std::max(bone_length - capsule_radius*2, 0.0f);
     }
     bullet_dynamic_object->shape = new btCapsuleShape(capsule_radius, capsule_length);
-    if(followBone->isHair && !followBone->isStaticHair) {
+    if(followBone->isChain && !followBone->isPinnedChain) {
       bullet_dynamic_object->motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, 0, 0)));
       float fallMass = 1;
       btVector3 fallInertia(0, 0, 0);
@@ -438,7 +439,7 @@ static void InitSimulation() {
   // http://bulletphysics.org/mediawiki-1.5.8/index.php/Simple_Chain
   for(int k = 0; k < model->bones_.size(); k++) {
     Bone* followBone = &model->bones_[k];
-    if(!followBone->isHair || followBone->isStaticHair) {
+    if(!followBone->isChain || followBone->isPinnedChain) {
       continue;
     }
     Bone* followBoneParent = &model->bones_[followBone->parentIndex];
@@ -470,7 +471,8 @@ static void InitSimulation() {
     float bone_length = VLength(bone_delta);
 #endif
     // DBG
-    //std::cout << "HAIR: " << followBone->ascii_name << " ==> " << followBoneParent->ascii_name << " (" << bone_length << ")" << std::endl;
+    //std::cout << "CHAIN: " << followBone->ascii_name << " ==> " << followBoneParent->ascii_name <<
+    //    (followBoneParent->isPinnedChain ? "*" : "") << " (" << bone_length << ")" << std::endl;
 
     float pivot_offset = bone_length*0.5;
 
@@ -528,9 +530,9 @@ static void StepSimulation() {
     if(!followBone) {
       continue;
     }
-    if(followBone->isHair && !followBone->isStaticHair) {
-      // DBG (FIX-ME! -- crazy hair)
-      //if(followBone->isHair) {
+    if(followBone->isChain && !followBone->isPinnedChain) {
+      // DBG (FIX-ME! -- can't integrate bullet results back into bone pos! bone pos is local?)
+      //if(followBone->isChain) {
       //  btTransform trans;
       //  bullet_dynamic_object->rigidBody->getMotionState()->getWorldTransform(trans);
       //  followBone->pos[0] = trans.getOrigin().getX();
@@ -545,7 +547,8 @@ static void StepSimulation() {
 
 #ifdef ENABLE_GLM
     // calculate bone endpoints in world space
-    Bone* followBoneOther = &model->bones_[followBone->isHair ? followBone->parentIndex : followBone->tailIndex];
+    // chain bones link up, non-chain bones link down
+    Bone* followBoneOther = &model->bones_[followBone->isChain ? followBone->parentIndex : followBone->tailIndex];
     glm::vec4 bone_start = glm::make_mat4(followBone->matrix)*glm::vec4(0, 0, 0, 1);
     glm::vec4 bone_end = glm::make_mat4(followBoneOther->matrix)*glm::vec4(0, 0, 0, 1);
 
@@ -1430,7 +1433,7 @@ static void DrawBulletResult() {
     if(!followBone) {
       continue;
     }
-    if(followBone->isHair) {
+    if(followBone->isChain) {
       btTransform trans;
       bullet_dynamic_object->rigidBody->getMotionState()->getWorldTransform(trans);
       glPushMatrix();
@@ -1814,47 +1817,53 @@ void keyboard(unsigned char k, int x, int y) {
   }
 }
 
-static void IdentifyHairBones() {
-  Bone* head = NULL;
+static void IdentifyChainBones(std::string seed_name, std::set<std::string>* exception_list) {
+  Bone* seed_bone = NULL;
   for(int i = 0; i < model->bones_.size(); i++) {
-    if(model->bones_[i].ascii_name == "head") {
-      head = &model->bones_[i];
+    if(model->bones_[i].ascii_name == seed_name) {
+      seed_bone = &model->bones_[i];
       break;
     }
   }
-  std::set<Bone*> hair_flood_fill;
-  hair_flood_fill.insert(head);
+  std::set<Bone*> flood_fill;
+  flood_fill.insert(seed_bone);
   int n = 0;
   bool change = true;
   while(change) {
     change = false;
     for(int j = 0; j < model->bones_.size(); j++) {
-      if(model->bones_[j].ascii_name.empty() &&
-          hair_flood_fill.find(&model->bones_[model->bones_[j].parentIndex]) != hair_flood_fill.end())
+      if((model->bones_[j].ascii_name.empty() ||
+         (exception_list && exception_list->find(model->bones_[j].ascii_name) != exception_list->end())) &&
+         flood_fill.find(&model->bones_[model->bones_[j].parentIndex]) != flood_fill.end())
       {
         std::stringstream ss;
-        ss << "hair" << n;
+        ss << seed_name << n;
         model->bones_[j].ascii_name = ss.str();
-        hair_flood_fill.insert(&model->bones_[j]);
+        flood_fill.insert(&model->bones_[j]);
         change = true;
         n++;
       }
     }
   }
-  hair_flood_fill.erase(head);
+  flood_fill.erase(seed_bone);
   for(int k = 0; k < model->bones_.size(); k++) {
-    // heuristic to identify hair bones:
-    // if current bone is connected to head bone directly/indirectly, current bone is a hair bone
-    model->bones_[k].isHair = (hair_flood_fill.find(&model->bones_[k]) != hair_flood_fill.end());
+    if(model->bones_[k].isChain || model->bones_[k].isPinnedChain) {
+      continue;
+    }
 
-    // heuristic to identify static hair bones:
+    // heuristic to identify chain bones:
+    // if current bone is connected to seed bone directly/indirectly, current bone is a chain bone
+    model->bones_[k].isChain = (flood_fill.find(&model->bones_[k]) != flood_fill.end());
+
+    // heuristic to identify pinned chain bones:
     // if parent bone's tail index is illegal, parent bone must be a diverging bone
     // if parent bone is a diverging bone, current bone must be excluded from physics simulation
-    model->bones_[k].isStaticHair =
-        (model->bones_[k].isHair && !model->bones_[model->bones_[k].parentIndex].tailIndex);
+    model->bones_[k].isPinnedChain =
+        (model->bones_[k].isChain && !model->bones_[model->bones_[k].parentIndex].tailIndex);
+
     // DBG
-    //if(model->bones_[k].isStaticHair) {
-    //  std::cout << "STATIC_HAIR: " << model->bones_[k].ascii_name << std::endl;
+    //if(model->bones_[k].isPinnedChain) {
+    //  std::cout << "PINNED_CHAIN: " << model->bones_[k].ascii_name << std::endl;
     //}
   }
 }
@@ -1878,7 +1887,20 @@ void load(char *pmdmodel, char *vmdmodel) {
   DumpBone();
 
   CalculateBboxMinMax();
-  IdentifyHairBones();
+
+  IdentifyChainBones("head", NULL);
+
+#ifdef ENABLE_EXTRA_PHYSICS
+  // DBG (FIX-ME! -- unruly skirt/sleaves!)
+  IdentifyChainBones("lower_body", NULL);
+  std::set<std::string> exception_list;
+  exception_list.insert("sleave_L");
+  exception_list.insert("sleave_R");
+  exception_list.insert("cuff_L");
+  exception_list.insert("cuff_R");
+  IdentifyChainBones("elbow_L", &exception_list);
+  IdentifyChainBones("elbow_R", &exception_list);
+#endif
 }
 
 void init() {
