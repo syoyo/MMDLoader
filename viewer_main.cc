@@ -1283,7 +1283,7 @@ static void DrawIK() {
 
     glBegin(GL_POINTS);
     glColor3f(1.0f, 0.0f, 0.0f);
-    glVertex3f(root.matrixTemp[12], root.matrixTemp[13], root.matrixTemp[14]);
+    glVertex3f(root.matrixTemp[12], root.matrixTemp[13], -root.matrixTemp[14]);
     glEnd();
 
     if (ik.childBoneIndices.empty())
