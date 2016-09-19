@@ -8,7 +8,6 @@
 Simple MMD(PMD, VMD) loader in C++.
 MMDLoader is written in portable manner. No dependency except for C++ STL.
 
-
 ## Usage
 
 Simply copy `mmd_*`, `pmd_*` and `vmd_*` files to your project.
@@ -45,7 +44,6 @@ scene->AttachAnimation(anim);
 
 OpenGL(GLUT) example viewer is included(see viewer_main.cc).
 
-
 ## Features
 
 Supported
@@ -59,13 +57,24 @@ TODOs
 (Contributors welcome!)
 
 * [ ] Physics(Bullet)
+  * W.I.P.
+
+## Compiling example
+
+Here is the list of premake options.
+
+    --with-glm          : Use glm
+    --with-bullet       : Use Bullet physics(Set path to bullet in `premake4.lua`)
+    --with-euler-camera : Use Euler camera(Adds glm dependency)
 
 ## Author
 
 Syoyo Fujita(syoyo@lighttransport.com)
 
+### Contributor(s)
+
+Jerry Chen(onlyuser@gmail.com) : glm, Bullet physics, Euler camera, split screen vr
+
 ## License
 
 3-clause BSD.
-
-

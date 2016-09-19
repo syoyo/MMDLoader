@@ -6,6 +6,8 @@
 
 #include <iostream>
 #include <vector>
+#include <set>
+#include <sstream>
 #include <algorithm>
 #include <cmath>
 
@@ -35,9 +37,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-
-#ifdef ENABLE_EULER_CAMERA
 #include <glm/gtx/vector_angle.hpp>
+#include <glm/gtx/euler_angles.hpp>
 
 #if GLM_VERSION >= 96
     // glm::rotate changed from degrees to radians in GLM 0.9.6
@@ -45,7 +46,6 @@
     #define GLM_ROTATE(m, a, v) glm::rotate((m), glm::radians(a), (v))
 #else
     #define GLM_ROTATE(m, a, v) glm::rotate((m), (a), (v))
-#endif
 #endif
 
 #endif
@@ -56,7 +56,7 @@ using namespace mmd;
 #define WINDOW_HEIGHT 600
 #define LARGE_NUMBER 1000000
 
-#if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
+#if defined(ENABLE_GLM)
 #define ORIENT_ROLL(v)  v[0]
 #define ORIENT_PITCH(v) v[1]
 #define ORIENT_YAW(v)   v[2]
@@ -65,8 +65,11 @@ using namespace mmd;
 #define VEC_UP      glm::vec3(0, 1, 0)
 #define VEC_FORWARD glm::vec3(0, 0, 1)
 
+#ifdef ENABLE_EULER_CAMERA
 #define MAX_PITCH  89.999
 #define MIN_PITCH -89.999
+#endif
+
 #endif
 
 #define MAX_BUF_LEN 20
@@ -109,6 +112,7 @@ static bool draw_bones = true;
 static bool draw_wireframe = false;
 static bool print_bone_info = false;
 static bool draw_bullet_scene = false;
+static bool draw_bullet_result = false;
 static int split_screen_vr_mode = 0;
 
 PMDModel *model = NULL;
@@ -130,17 +134,33 @@ float collist[7][3] = {
     {1.0, 1.0, 1.0},
 };
 
-#if defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA)
+#if defined(ENABLE_GLM)
+#define EPSILON 0.0001
+
+#define SIGN(x) (!(x) ? 0 : (((x) > 0) ? 1 : -1))
+
 static glm::vec3 OrientToOffset(glm::vec3 orient) {
-  glm::mat4 pitch = GLM_ROTATE(
-      glm::mat4(1),
-      ORIENT_PITCH(orient), VEC_LEFT);
-  glm::mat4 yaw = GLM_ROTATE(
-      glm::mat4(1),
-      ORIENT_YAW(orient), VEC_UP);
+  glm::mat4 pitch = GLM_ROTATE(glm::mat4(1), ORIENT_PITCH(orient), VEC_LEFT);
+  glm::mat4 yaw = GLM_ROTATE(glm::mat4(1), ORIENT_YAW(orient), VEC_UP);
   return glm::vec3(yaw*pitch*glm::vec4(VEC_FORWARD, 1));
 }
 
+glm::vec3 OffsetToOrient(glm::vec3 offset) {
+  offset = glm::normalize(offset);
+  glm::vec3 t(offset.x, 0, offset.z); // flattened offset
+  t = glm::normalize(t);
+  glm::vec3 r(0, glm::angle(t, offset), glm::angle(t, VEC_FORWARD));
+  if(static_cast<float>(fabs(offset.x)) < EPSILON && static_cast<float>(fabs(offset.z)) < EPSILON) {
+    ORIENT_PITCH(r) = -SIGN(offset.y)*glm::radians(90.0f);
+    ORIENT_YAW(r) = 0; // undefined
+    return r;
+  }
+  if(offset.x < 0) ORIENT_YAW(r)   *= -1;
+  if(offset.y > 0) ORIENT_PITCH(r) *= -1;
+  return r;
+}
+
+#ifdef ENABLE_EULER_CAMERA
 static void UpdateCameraParams() {
   glm::vec3 view_target(scene->static_center.x, scene->static_center.y, scene->static_center.z);
   glm::vec3 view_origin = view_target+OrientToOffset(orient)*orbit_radius;
@@ -151,6 +171,8 @@ static void UpdateCameraParams() {
   view_tgt[1] = scene->static_center.y;
   view_tgt[2] = scene->static_center.z;
 }
+#endif
+
 #endif
 
 static void PrintBitmapString(void* font, const char* s) {
@@ -253,28 +275,19 @@ btCollisionDispatcher*               dispatcher;
 btSequentialImpulseConstraintSolver* solver;
 btDiscreteDynamicsWorld*             dynamicsWorld;
 
-btCollisionShape*     groundShape;
-btDefaultMotionState* groundMotionState;
-btRigidBody*          groundRigidBody;
+struct BulletDynamicObject_t {
+  btCollisionShape*     shape;
+  btDefaultMotionState* motionState;
+  btRigidBody*          rigidBody;
+  Bone*                 followBone;
+};
 
-btCollisionShape*     fallShape;
-btDefaultMotionState* fallMotionState;
-btRigidBody*          fallRigidBody;
-
-Bone* elbowBone = NULL;
-Bone* shoulderBone = NULL;
+BulletDynamicObject_t ground, fall;
+std::vector<BulletDynamicObject_t*> bullet_dynamic_objects;
+std::set<std::string> bullet_follow_bone_names;
 
 // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/Hello_World
 static void InitSimulation() {
-  for(int i = 0; i < model->bones_.size(); i++) {
-    if(model->bones_[i].ascii_name == "elbow_R") {
-      elbowBone = &model->bones_[i];
-      shoulderBone = &model->bones_[(&model->bones_[elbowBone->parentIndex])->parentIndex];
-      assert(shoulderBone->ascii_name == "arm_R");
-      break;
-    }
-  }
-
   broadphase             = new btDbvtBroadphase();
   collisionConfiguration = new btDefaultCollisionConfiguration();
   dispatcher             = new btCollisionDispatcher(collisionConfiguration);
@@ -282,18 +295,193 @@ static void InitSimulation() {
   dynamicsWorld          = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
   dynamicsWorld->setGravity(btVector3(0, -10, 0));
 
-  groundShape       = new btStaticPlaneShape(btVector3(0, 1, 0), 1);
-  groundMotionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, -1, 0)));
-  groundRigidBody   = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(0, groundMotionState, groundShape, btVector3(0, 0, 0)));
-  dynamicsWorld->addRigidBody(groundRigidBody);
+  ground.shape       = new btStaticPlaneShape(btVector3(0, 1, 0), 1);
+  ground.motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, -1, 0)));
+  ground.rigidBody   = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(0, ground.motionState, ground.shape, btVector3(0, 0, 0)));
+  dynamicsWorld->addRigidBody(ground.rigidBody);
 
-  fallShape       = new btCapsuleShape(2, 4); //new btSphereShape(1);
-  fallMotionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, fallHeight, 0)));
-  float mass = 1;
+  fall.shape = new btCapsuleShape(2, 4); //new btSphereShape(0.5);
+  fall.motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, fallHeight, 0)));
+  float fallMass = 1;
   btVector3 fallInertia(0, 0, 0);
-  fallShape->calculateLocalInertia(mass, fallInertia);
-  fallRigidBody = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(mass, fallMotionState, fallShape, fallInertia));
-  dynamicsWorld->addRigidBody(fallRigidBody);
+  fall.shape->calculateLocalInertia(fallMass, fallInertia);
+  fall.rigidBody = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(fallMass, fall.motionState, fall.shape, fallInertia));
+  dynamicsWorld->addRigidBody(fall.rigidBody);
+
+  // main bones
+  bullet_follow_bone_names.insert("head");
+  bullet_follow_bone_names.insert("neck");
+  bullet_follow_bone_names.insert("upper_body");
+  bullet_follow_bone_names.insert("lower_body");
+
+  // arm bones
+  bullet_follow_bone_names.insert("shoulder_L");
+  bullet_follow_bone_names.insert("shoulder_R");
+  bullet_follow_bone_names.insert("arm_L");
+  bullet_follow_bone_names.insert("arm_R");
+  bullet_follow_bone_names.insert("elbow_L");
+  bullet_follow_bone_names.insert("elbow_R");
+  bullet_follow_bone_names.insert("wrist_L");
+  bullet_follow_bone_names.insert("wrist_R");
+
+  // leg bones
+  bullet_follow_bone_names.insert("leg_L");
+  bullet_follow_bone_names.insert("leg_R");
+  bullet_follow_bone_names.insert("knee_L");
+  bullet_follow_bone_names.insert("knee_R");
+  bullet_follow_bone_names.insert("ankle_L");
+  bullet_follow_bone_names.insert("ankle_R");
+
+  // minor bones
+  bullet_follow_bone_names.insert("thumb1_L");
+  bullet_follow_bone_names.insert("thumb1_R");
+  bullet_follow_bone_names.insert("thumb2_L");
+  bullet_follow_bone_names.insert("thumb2_R");
+  bullet_follow_bone_names.insert("fore1_L");
+  bullet_follow_bone_names.insert("fore1_R");
+  bullet_follow_bone_names.insert("fore2_L");
+  bullet_follow_bone_names.insert("fore2_R");
+  bullet_follow_bone_names.insert("fore3_L");
+  bullet_follow_bone_names.insert("fore3_R");
+  bullet_follow_bone_names.insert("middle1_L");
+  bullet_follow_bone_names.insert("middle1_R");
+  bullet_follow_bone_names.insert("middle2_L");
+  bullet_follow_bone_names.insert("middle2_R");
+  bullet_follow_bone_names.insert("middle3_L");
+  bullet_follow_bone_names.insert("middle3_R");
+  bullet_follow_bone_names.insert("third1_L");
+  bullet_follow_bone_names.insert("third1_R");
+  bullet_follow_bone_names.insert("third2_L");
+  bullet_follow_bone_names.insert("third2_R");
+  bullet_follow_bone_names.insert("third3_L");
+  bullet_follow_bone_names.insert("third3_R");
+  bullet_follow_bone_names.insert("little1_L");
+  bullet_follow_bone_names.insert("little1_R");
+  bullet_follow_bone_names.insert("little2_L");
+  bullet_follow_bone_names.insert("little2_R");
+  bullet_follow_bone_names.insert("little3_L");
+  bullet_follow_bone_names.insert("little3_R");
+
+  // clear dynamic object lini
+  for(int i = 0; i < model->bones_.size(); i++) {
+    Bone* followBone = &model->bones_[i];
+    followBone->bulletDynamicObject = NULL;
+  }
+
+  // assign a dynamic object to each bone
+  for(int j = 0; j < model->bones_.size(); j++) {
+    // identify bone endpoints
+    Bone* followBone = &model->bones_[j];
+    if(bullet_follow_bone_names.find(followBone->ascii_name) == bullet_follow_bone_names.end() &&
+        !followBone->isChain)
+    {
+      // skip if not in "bullet_follow_bone_names" and not chain bone
+      continue;
+    }
+    // chain bones link up, non-chain bones link down
+    Bone* followBoneOther = &model->bones_[followBone->isChain ? followBone->parentIndex : followBone->tailIndex];
+
+    // calculate bone dimensions
+#ifdef ENABLE_GLM
+    glm::vec3 bone_start(followBone->pos[0], followBone->pos[1], followBone->pos[2]);
+    glm::vec3 bone_end(followBoneOther->pos[0], followBoneOther->pos[1], followBoneOther->pos[2]);
+    float bone_length = glm::distance(bone_start, bone_end);
+#else
+    Vector3 bone_start;
+    bone_start.x = followBone->pos[0];
+    bone_start.y = followBone->pos[1];
+    bone_start.z = followBone->pos[2];
+    Vector3 bone_end;
+    bone_end.x = followBoneOther->pos[0];
+    bone_end.y = followBoneOther->pos[1];
+    bone_end.z = followBoneOther->pos[2];
+    Vector3 bone_delta;
+    VSub(bone_delta, bone_end, bone_start);
+    float bone_length = VLength(bone_delta);
+#endif
+
+    // configure dynamic object with mass, scripted object without mass
+    BulletDynamicObject_t* bullet_dynamic_object = new BulletDynamicObject_t();
+    float capsule_radius = 0;
+    float capsule_length = 0;
+    if(followBone->hasVertices) {
+      capsule_radius = std::min(followBone->dim.x, std::min(followBone->dim.y, followBone->dim.z))*0.5;
+      capsule_length = std::max(bone_length - capsule_radius*2, 0.0f);
+    }
+    bullet_dynamic_object->shape = new btCapsuleShape(capsule_radius, capsule_length);
+    if(followBone->isChain && !followBone->isPinnedChain) {
+      bullet_dynamic_object->motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, 0, 0)));
+      float fallMass = 1;
+      btVector3 fallInertia(0, 0, 0);
+      bullet_dynamic_object->shape->calculateLocalInertia(fallMass, fallInertia);
+      bullet_dynamic_object->rigidBody = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(fallMass, bullet_dynamic_object->motionState, bullet_dynamic_object->shape, fallInertia));
+    } else {
+      bullet_dynamic_object->motionState = new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, 0, 0)));
+      bullet_dynamic_object->rigidBody = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(0, bullet_dynamic_object->motionState, bullet_dynamic_object->shape, btVector3(0, 0, 0)));
+    }
+
+    // register dynamic object to world
+    dynamicsWorld->addRigidBody(bullet_dynamic_object->rigidBody);
+    bullet_dynamic_object->followBone = followBone;
+    bullet_dynamic_objects.push_back(bullet_dynamic_object);
+
+    followBone->bulletDynamicObject = bullet_dynamic_object;
+  }
+
+  // generate "simple chain" constraints
+  // http://bulletphysics.org/mediawiki-1.5.8/index.php/Simple_Chain
+  for(int k = 0; k < model->bones_.size(); k++) {
+    Bone* followBone = &model->bones_[k];
+    if(!followBone->isChain || followBone->isPinnedChain) {
+      continue;
+    }
+    Bone* followBoneParent = &model->bones_[followBone->parentIndex];
+    if(!followBone->bulletDynamicObject || !followBoneParent->bulletDynamicObject) {
+      // DBG
+      //std::cout << "SKIPPING: " << followBone->ascii_name << std::endl;
+      continue;
+    }
+
+    btRigidBody* b1 = reinterpret_cast<BulletDynamicObject_t*>(followBone->bulletDynamicObject)->rigidBody;
+    btRigidBody* b2 = reinterpret_cast<BulletDynamicObject_t*>(followBoneParent->bulletDynamicObject)->rigidBody;
+
+    // calculate bone dimensions
+#ifdef ENABLE_GLM
+    glm::vec3 bone_start(followBone->pos[0], followBone->pos[1], followBone->pos[2]);
+    glm::vec3 bone_end(followBoneParent->pos[0], followBoneParent->pos[1], followBoneParent->pos[2]);
+    float bone_length = glm::distance(bone_start, bone_end);
+#else
+    Vector3 bone_start;
+    bone_start.x = followBone->pos[0];
+    bone_start.y = followBone->pos[1];
+    bone_start.z = followBone->pos[2];
+    Vector3 bone_end;
+    bone_end.x = followBoneParent->pos[0];
+    bone_end.y = followBoneParent->pos[1];
+    bone_end.z = followBoneParent->pos[2];
+    Vector3 bone_delta;
+    VSub(bone_delta, bone_end, bone_start);
+    float bone_length = VLength(bone_delta);
+#endif
+    // DBG
+    //std::cout << "CHAIN: " << followBone->ascii_name << " ==> " << followBoneParent->ascii_name <<
+    //    (followBoneParent->isPinnedChain ? "*" : "") << " (" << bone_length << ")" << std::endl;
+
+    float pivot_offset = bone_length*0.5;
+
+#ifdef ENABLE_DUAL_CONSTRAINT_CHAIN
+    // straight from the bullet example, but with no basis in reality
+    btPoint2PointConstraint* leftSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(-0.5, pivot_offset, 0), btVector3(-0.5, -pivot_offset,0));
+    dynamicsWorld->addConstraint(leftSpring);
+
+    btPoint2PointConstraint* rightSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(0.5, pivot_offset, 0), btVector3(0.5, -pivot_offset, 0));
+    dynamicsWorld->addConstraint(rightSpring);
+#else
+    // simpler setup with negligible loss of quality
+    btPoint2PointConstraint* rightSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(0, pivot_offset, 0), btVector3(0, -pivot_offset, 0));
+    dynamicsWorld->addConstraint(rightSpring);
+#endif
+  }
 
   // http://stackoverflow.com/questions/11985204/how-to-draw-render-a-bullet-physics-collision-body-shape
   dynamicsWorld->setDebugDrawer(GLDebugDrawer::instance());
@@ -301,15 +489,27 @@ static void InitSimulation() {
 }
 
 static void DeInitSimulation() {
-  dynamicsWorld->removeRigidBody(fallRigidBody);
-  delete fallRigidBody->getMotionState();
-  delete fallRigidBody;
-  delete fallShape;
+  // free rigid bodies
+  for(std::vector<BulletDynamicObject_t*>::iterator p = bullet_dynamic_objects.begin();
+      p != bullet_dynamic_objects.end(); p++)
+  {
+    BulletDynamicObject_t* bullet_dynamic_object = *p;
+    dynamicsWorld->removeRigidBody(bullet_dynamic_object->rigidBody);
+    delete bullet_dynamic_object->rigidBody->getMotionState();
+    delete bullet_dynamic_object->rigidBody;
+    delete bullet_dynamic_object->shape;
+  }
+  bullet_dynamic_objects.clear();
 
-  dynamicsWorld->removeRigidBody(groundRigidBody);
-  delete groundRigidBody->getMotionState();
-  delete groundRigidBody;
-  delete groundShape;
+  dynamicsWorld->removeRigidBody(fall.rigidBody);
+  delete fall.rigidBody->getMotionState();
+  delete fall.rigidBody;
+  delete fall.shape;
+
+  dynamicsWorld->removeRigidBody(ground.rigidBody);
+  delete ground.rigidBody->getMotionState();
+  delete ground.rigidBody;
+  delete ground.shape;
 
   delete dynamicsWorld;
   delete solver;
@@ -320,16 +520,91 @@ static void DeInitSimulation() {
 
 static void StepSimulation() {
   dynamicsWorld->stepSimulation(1 / 60.f, 10);
-  // DBG
-  // btTransform trans;
-  // fallRigidBody->getMotionState()->getWorldTransform(trans);
-  // std::cout << "sphere height: " << trans.getOrigin().getY() << std::endl;
-#if 0
-  if(simStep > maxSimSteps || !fallRigidBody->isActive()) {
-#endif
+
+  // make dynamic object follow its assigned bone
+  for(std::vector<BulletDynamicObject_t*>::iterator p = bullet_dynamic_objects.begin();
+      p != bullet_dynamic_objects.end(); p++)
+  {
+    BulletDynamicObject_t* bullet_dynamic_object = *p;
+    Bone* followBone = bullet_dynamic_object->followBone;
+    if(!followBone) {
+      continue;
+    }
+    if(followBone->isChain && !followBone->isPinnedChain) {
+      continue;
+    }
+
     // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/MotionStates
     btTransform startTransform;
-#if 0
+
+#ifdef ENABLE_GLM
+    // calculate bone endpoints in world space
+    // chain bones link up, non-chain bones link down
+    Bone* followBoneOther = &model->bones_[followBone->isChain ? followBone->parentIndex : followBone->tailIndex];
+    glm::vec4 bone_start = glm::make_mat4(followBone->matrix)*glm::vec4(0, 0, 0, 1);
+    glm::vec4 bone_end = glm::make_mat4(followBoneOther->matrix)*glm::vec4(0, 0, 0, 1);
+
+    // opengl is right-handed coordinate system
+    // pmd is left-handed coordinate system
+    bone_start = glm::scale(glm::mat4(1), glm::vec3(1, 1, -1))*bone_start;
+    bone_end = glm::scale(glm::mat4(1), glm::vec3(1, 1, -1))*bone_end;
+
+    // point dynamic object along bone
+    glm::vec3 bone_orient = OffsetToOrient(glm::vec3(bone_end - bone_start));
+    glm::mat4 bone_orient_xform_glm = glm::yawPitchRoll(ORIENT_YAW(bone_orient),
+                                                        ORIENT_PITCH(bone_orient),
+                                                        ORIENT_ROLL(bone_orient));
+
+    // point capsule "shape" in default euler orientation
+    bone_orient_xform_glm = bone_orient_xform_glm*GLM_ROTATE(glm::mat4(1), 90.0f, VEC_LEFT);
+
+    // convert glm matrix into bullet matrix
+    btMatrix3x3 bone_orient_xform_bt;
+    for(int i = 0; i<4; i++) {
+      for(int j = 0; j<4; j++) {
+        // glm matrix is column major, bullet matrix is row major
+        bone_orient_xform_bt[i][j] = bone_orient_xform_glm[j][i];
+      }
+    }
+
+    // move dynamic object to bone center
+    glm::vec4 bone_center = (bone_start + bone_end)*0.5f;
+
+    // configure dynamic object position/orientation
+    startTransform = btTransform(bone_orient_xform_bt, btVector3(bone_center.x, bone_center.y, bone_center.z));
+#else
+    startTransform.setFromOpenGLMatrix(followBone->matrix);
+
+    // opengl is right-handed coordinate system
+    // pmd is left-handed coordinate system
+    btTransform flip_z_xform(btMatrix3x3(1, 0, 0,
+                                         0, 1, 0,
+                                         0, 0, -1));
+    startTransform = flip_z_xform*startTransform;
+#endif
+
+    // this is not enough to move a rigid body in bullet..
+    bullet_dynamic_object->rigidBody->getMotionState()->setWorldTransform(startTransform);
+
+    // required step to move a rigid body in bullet
+    // re-adding the rigid body to the world also works
+    bullet_dynamic_object->rigidBody->setMotionState(bullet_dynamic_object->rigidBody->getMotionState());
+
+    // shortcut to moving "relative" position (undesired!)
+    // fall.rigidBody->translate(btVector3(0, fallHeight, 0));
+
+    // required step to wake up deactivated rigid bodies in bullet
+    // dynamic rigid bodies deactivate after remaining static for a while
+    bullet_dynamic_object->rigidBody->activate();
+  }
+
+  // reset falling capsule
+  if(simStep > maxSimSteps || !fall.rigidBody->isActive()) {
+
+    // http://www.bulletphysics.org/mediawiki-1.5.8/index.php/MotionStates
+    btTransform startTransform;
+
+    // randomize start position
     startTransform.setIdentity();
     startTransform.setOrigin(btVector3(0, fallHeight, 0));
     float axis_x = -1+2*rand()/RAND_MAX;
@@ -337,34 +612,24 @@ static void StepSimulation() {
     float axis_z = -1+2*rand()/RAND_MAX;
     float angle  = 2*PI*rand()/RAND_MAX;
     startTransform.setRotation(btQuaternion(axis_x, axis_y, axis_z, angle));
-#else
-    startTransform.setFromOpenGLMatrix(elbowBone->matrix);
-    btMatrix3x3 m(1, 0, 0,
-                  0, 1, 0,
-                  0, 0, -1);
-    btTransform t(m);
-    startTransform = t*startTransform;
-#endif
 
-    // this is not enough to move an rigid body in bullet..
-    fallRigidBody->getMotionState()->setWorldTransform(startTransform);
+    // this is not enough to move a rigid body in bullet..
+    fall.rigidBody->getMotionState()->setWorldTransform(startTransform);
 
     // required step to move a rigid body in bullet
     // re-adding the rigid body to the world also works
-    fallRigidBody->setMotionState(fallRigidBody->getMotionState());
+    fall.rigidBody->setMotionState(fall.rigidBody->getMotionState());
 
-    // short-cut to moving "relative" position (undesired!)
-    // fallRigidBody->translate(btVector3(0, fallHeight, 0));
+    // shortcut to moving "relative" position (undesired!)
+    // fall.rigidBody->translate(btVector3(0, fallHeight, 0));
 
-    // required step to wake-up deactivated rigid bodies in bullet
+    // required step to wake up deactivated rigid bodies in bullet
     // dynamic rigid bodies deactivate after remaining static for a while
-    fallRigidBody->activate();
+    fall.rigidBody->activate();
 
     simStep = 0;
     return;
-#if 0
   }
-#endif
   simStep++;
 }
 #endif
@@ -425,6 +690,7 @@ static void CalculateBboxMinMax() {
     model->bones_[i].max.x = -LARGE_NUMBER;
     model->bones_[i].max.y = -LARGE_NUMBER;
     model->bones_[i].max.z = -LARGE_NUMBER;
+    model->bones_[i].hasVertices = false;
   }
   for (int j = 0; j < model->vertices_.size(); j++) {
     PMDVertex &pv = model->vertices_[j];
@@ -439,6 +705,7 @@ static void CalculateBboxMinMax() {
     model->bones_[b0].max.x = std::max(model->bones_[b0].max.x, p0.x);
     model->bones_[b0].max.y = std::max(model->bones_[b0].max.y, p0.y);
     model->bones_[b0].max.z = std::max(model->bones_[b0].max.z, p0.z);
+    model->bones_[b0].hasVertices = true;
   }
 
   // calculate static scene bbox
@@ -463,7 +730,7 @@ static void CalculateBboxMinMax() {
     axis.y = model->bones_[k].pos[1];
     axis.z = model->bones_[k].pos[2];
 
-    // Bone matrix is defined in absolute coordinate.
+    // Bone matrix is defined in absolute coordinates.
     // Pass vertex static_min/static_max in relative coordinate to bone matrix.
     VSub(model->bones_[k].max, model->bones_[k].max, axis);
     VSub(model->bones_[k].min, model->bones_[k].min, axis);
@@ -496,7 +763,7 @@ static void VertexTransform(float *vbuffer) {
     Vector3 v1;
     Vector3 v;
 
-    // Bone matrix is defined in absolute coordinate.
+    // Bone matrix is defined in absolute coordinates.
     // Pass a vertex in relative coordinate to bone matrix.
     p0.x -= model->bones_[b0].pos[0];
     p0.y -= model->bones_[b0].pos[1];
@@ -846,6 +1113,35 @@ static void Update() {
   }
 #endif
 
+#ifdef ENABLE_BULLET
+  if(do_animate) {
+    // move simulation here so there's up-to-date rigid body coordinates right before VertexTransform
+    StepSimulation();
+  }
+
+  // write to bone matrix elements corresponding with translation
+  for(std::vector<BulletDynamicObject_t*>::iterator p = bullet_dynamic_objects.begin();
+      p != bullet_dynamic_objects.end(); p++)
+  {
+    BulletDynamicObject_t* bullet_dynamic_object = *p;
+    Bone* followBone = bullet_dynamic_object->followBone;
+    if(!followBone) {
+      continue;
+    }
+    if(followBone->isChain && !followBone->isPinnedChain) {
+      btTransform worldTransform;
+      bullet_dynamic_object->rigidBody->getMotionState()->getWorldTransform(worldTransform);
+      btVector3 worldPos = worldTransform.getOrigin();
+
+      // Bone matrix is defined in absolute coordinates.
+      followBone->matrix[12] = worldPos.getX();
+      followBone->matrix[13] = worldPos.getY();
+      followBone->matrix[14] = -worldPos.getZ();
+      continue;
+    }
+  }
+#endif
+
   VertexTransform(renderVertices);
 
 #else
@@ -945,6 +1241,7 @@ static void DrawBone() {
   for (int i = 0; i < model->bones_.size(); i++) {
     Bone &b = model->bones_[i];
 
+    // read from bone matrix elements corresponding with translation
     if (b.parentIndex == 0xFFFF) {
       glBegin(GL_POINTS);
       if (b.isLeg) {
@@ -1145,6 +1442,35 @@ static void DrawBulletScene() {
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
 }
+
+static void DrawBulletResult() {
+  glDisable(GL_LIGHTING);
+  //glDisable(GL_DEPTH_TEST);
+
+  for(std::vector<BulletDynamicObject_t*>::iterator p = bullet_dynamic_objects.begin();
+      p != bullet_dynamic_objects.end(); p++)
+  {
+    BulletDynamicObject_t* bullet_dynamic_object = *p;
+    Bone* followBone = bullet_dynamic_object->followBone;
+    if(!followBone) {
+      continue;
+    }
+    if(followBone->isChain) {
+      btTransform worldTransform;
+      bullet_dynamic_object->rigidBody->getMotionState()->getWorldTransform(worldTransform);
+      glPushMatrix();
+      btVector3 worldPos = worldTransform.getOrigin();
+      glTranslatef(worldPos.getX(), worldPos.getY(), worldPos.getZ());
+      glColor3f(1, 0, 0);
+      glutWireCube(1);
+      glPopMatrix();
+    }
+  }
+
+  //glEnable(GL_DEPTH_TEST);
+  glEnable(GL_LIGHTING);
+}
+
 #endif
 
 void build_rot_matrix(GLfloat m[4][4]) {
@@ -1186,13 +1512,20 @@ void display_for_one_eye(int eye_index, float eye_distance) {
   gluPerspective(view_fov, (float)w / (float)h, 0.1f, 50.0f);
 #endif
 
+#if !(defined(ENABLE_GLM) && defined(ENABLE_EULER_CAMERA))
+  parallax_offset /= scenesize;
+#endif
+
+  if(eye_index) {
+    glTranslatef(parallax_offset, 0, 0);
+  }
+
   glMatrixMode(GL_MODELVIEW);
 
 #ifdef ENABLE_GLM
   glm::vec3 origin(view_org[0], view_org[1], view_org[2]);
   glm::vec3 target(view_tgt[0], view_tgt[1], view_tgt[2]);
-  glm::vec3 up(0, 1, 0);
-  glm::mat4 model_view = glm::lookAt(origin, target, up);
+  glm::mat4 model_view = glm::lookAt(origin, target, VEC_UP);
   glLoadMatrixf(glm::value_ptr(model_view));
 #else
   glLoadIdentity();
@@ -1209,10 +1542,6 @@ void display_for_one_eye(int eye_index, float eye_distance) {
   glMultMatrixf(&(m[0][0]));
   glScalef(1.0 / scenesize, 1.0 / scenesize, 1.0 / scenesize);
 #endif
-
-  if(eye_index) {
-    glTranslatef(parallax_offset, 0, 0);
-  }
 
   DrawAxis();
 
@@ -1246,8 +1575,8 @@ void display_for_one_eye(int eye_index, float eye_distance) {
 
   if(draw_bones) {
     DrawBone();
+    //DrawBoneOriginal();
   }
-  // DrawBoneOriginal();
 
   if(print_bone_info) {
     PrintBoneInfo();
@@ -1256,6 +1585,10 @@ void display_for_one_eye(int eye_index, float eye_distance) {
 #ifdef ENABLE_BULLET
   if(draw_bullet_scene) {
     DrawBulletScene();
+  }
+
+  if(draw_bullet_result) {
+    DrawBulletResult();
   }
 #endif
 }
@@ -1283,10 +1616,6 @@ void display() {
   }
 
   glutSwapBuffers();
-
-#ifdef ENABLE_BULLET
-  StepSimulation();
-#endif
 }
 
 void reshape(int w, int h) {
@@ -1484,6 +1813,9 @@ void keyboard(unsigned char k, int x, int y) {
   case 'p':
     draw_bullet_scene = !draw_bullet_scene;
     break;
+  case 'r':
+    draw_bullet_result = !draw_bullet_result;
+    break;
   case 'v':
     split_screen_vr_mode = (split_screen_vr_mode+1)%3;
     break;
@@ -1498,6 +1830,60 @@ void keyboard(unsigned char k, int x, int y) {
 
   if (redraw) {
     display();
+  }
+}
+
+static void IdentifyChainBones(std::string seed_name, std::set<std::string>* exception_list) {
+  Bone* seed_bone = NULL;
+  for(int i = 0; i < model->bones_.size(); i++) {
+    if(model->bones_[i].ascii_name == seed_name) {
+      seed_bone = &model->bones_[i];
+      break;
+    }
+  }
+  std::set<Bone*> flood_fill_bones;
+  flood_fill_bones.insert(seed_bone);
+  int n = 0;
+  bool change = true;
+  while(change) {
+    change = false;
+    for(int j = 0; j < model->bones_.size(); j++) {
+      if((model->bones_[j].ascii_name.empty() ||
+         (exception_list && exception_list->find(model->bones_[j].ascii_name) != exception_list->end())) &&
+         flood_fill_bones.find(&model->bones_[model->bones_[j].parentIndex]) != flood_fill_bones.end())
+      {
+        std::stringstream ss;
+        ss << seed_name << n;
+        model->bones_[j].ascii_name = ss.str();
+        flood_fill_bones.insert(&model->bones_[j]);
+        change = true;
+        n++;
+      }
+    }
+  }
+  flood_fill_bones.erase(seed_bone);
+  for(int k = 0; k < model->bones_.size(); k++) {
+    if(model->bones_[k].isChain || model->bones_[k].isPinnedChain) {
+      continue;
+    }
+
+    // heuristic to identify chain bones:
+    // if current bone is connected to seed bone directly/indirectly, current bone is a chain bone
+    model->bones_[k].isChain = (flood_fill_bones.find(&model->bones_[k]) != flood_fill_bones.end());
+
+    // heuristic to identify pinned chain bones:
+    // if parent bone's tail index is illegal, parent bone must be a diverging bone
+    // if parent bone is a diverging bone, current bone must be excluded from physics simulation
+    // if parent bone is seed bone, current bone must be excluded from physics simulation
+    model->bones_[k].isPinnedChain =
+        (model->bones_[k].isChain && (!model->bones_[model->bones_[k].parentIndex].tailIndex ||
+                                      &model->bones_[model->bones_[k].parentIndex] == seed_bone //||
+                                      /*!model->bones_[k].hasVertices*/));
+
+    // DBG
+    //if(model->bones_[k].isPinnedChain) {
+    //  std::cout << "PINNED_CHAIN: " << model->bones_[k].ascii_name << std::endl;
+    //}
   }
 }
 
@@ -1520,6 +1906,20 @@ void load(char *pmdmodel, char *vmdmodel) {
   DumpBone();
 
   CalculateBboxMinMax();
+
+  IdentifyChainBones("head", NULL);
+
+#ifdef ENABLE_EXTRA_PHYSICS
+  // DBG (FIX-ME! -- unruly skirt/sleeves!)
+  IdentifyChainBones("lower_body", NULL);
+  std::set<std::string> exception_list;
+  exception_list.insert("sleeve_L");
+  exception_list.insert("sleeve_R");
+  exception_list.insert("cuff_L");
+  exception_list.insert("cuff_R");
+  IdentifyChainBones("elbow_L", &exception_list);
+  IdentifyChainBones("elbow_R", &exception_list);
+#endif
 }
 
 void init() {

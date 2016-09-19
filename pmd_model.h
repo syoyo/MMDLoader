@@ -120,12 +120,17 @@ struct Bone {
 
   float motionOffsetPos[3];
 
+  bool hasVertices;
   bool isLeg;
+  bool isChain;
+  bool isPinnedChain;
   bool updated;
 
   Vector3 min;
   Vector3 max;
   Vector3 dim;
+
+  void* bulletDynamicObject;
 };
 
 struct IK {
