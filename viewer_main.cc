@@ -469,11 +469,18 @@ static void InitSimulation() {
 
     float pivot_offset = bone_length*0.5;
 
+#ifdef ENABLE_DUAL_CONSTRAINT_CHAIN
+    // straight from the bullet example, but with no basis in reality
     btPoint2PointConstraint* leftSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(-0.5, pivot_offset, 0), btVector3(-0.5, -pivot_offset,0));
     dynamicsWorld->addConstraint(leftSpring);
 
     btPoint2PointConstraint* rightSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(0.5, pivot_offset, 0), btVector3(0.5, -pivot_offset, 0));
     dynamicsWorld->addConstraint(rightSpring);
+#else
+    // simpler setup with negligible loss of quality
+    btPoint2PointConstraint* rightSpring = new btPoint2PointConstraint(*b1, *b2, btVector3(0, pivot_offset, 0), btVector3(0, -pivot_offset, 0));
+    dynamicsWorld->addConstraint(rightSpring);
+#endif
   }
 
   // http://stackoverflow.com/questions/11985204/how-to-draw-render-a-bullet-physics-collision-body-shape
@@ -524,14 +531,6 @@ static void StepSimulation() {
       continue;
     }
     if(followBone->isChain && !followBone->isPinnedChain) {
-      // DBG (FIX-ME! -- can't integrate bullet results back into bone pos! bone pos is local?)
-      //if(followBone->isChain) {
-      //  btTransform trans;
-      //  bullet_dynamic_object->rigidBody->getMotionState()->getWorldTransform(trans);
-      //  followBone->pos[0] = trans.getOrigin().getX();
-      //  followBone->pos[1] = trans.getOrigin().getY();
-      //  followBone->pos[2] = -trans.getOrigin().getZ();
-      //}
       continue;
     }
 
@@ -731,7 +730,7 @@ static void CalculateBboxMinMax() {
     axis.y = model->bones_[k].pos[1];
     axis.z = model->bones_[k].pos[2];
 
-    // Bone matrix is defined in absolute coordinate.
+    // Bone matrix is defined in absolute coordinates.
     // Pass vertex static_min/static_max in relative coordinate to bone matrix.
     VSub(model->bones_[k].max, model->bones_[k].max, axis);
     VSub(model->bones_[k].min, model->bones_[k].min, axis);
@@ -764,7 +763,7 @@ static void VertexTransform(float *vbuffer) {
     Vector3 v1;
     Vector3 v;
 
-    // Bone matrix is defined in absolute coordinate.
+    // Bone matrix is defined in absolute coordinates.
     // Pass a vertex in relative coordinate to bone matrix.
     p0.x -= model->bones_[b0].pos[0];
     p0.y -= model->bones_[b0].pos[1];
@@ -1114,6 +1113,35 @@ static void Update() {
   }
 #endif
 
+#ifdef ENABLE_BULLET
+  if(do_animate) {
+    // move simulation here so there's up-to-date rigid body coordinates right before VertexTransform
+    StepSimulation();
+  }
+
+  // write to bone matrix elements corresponding with translation
+  for(std::vector<BulletDynamicObject_t*>::iterator p = bullet_dynamic_objects.begin();
+      p != bullet_dynamic_objects.end(); p++)
+  {
+    BulletDynamicObject_t* bullet_dynamic_object = *p;
+    Bone* followBone = bullet_dynamic_object->followBone;
+    if(!followBone) {
+      continue;
+    }
+    if(followBone->isChain && !followBone->isPinnedChain) {
+      btTransform worldTransform;
+      bullet_dynamic_object->rigidBody->getMotionState()->getWorldTransform(worldTransform);
+      btVector3 worldPos = worldTransform.getOrigin();
+
+      // Bone matrix is defined in absolute coordinates.
+      followBone->matrix[12] = worldPos.getX();
+      followBone->matrix[13] = worldPos.getY();
+      followBone->matrix[14] = -worldPos.getZ();
+      continue;
+    }
+  }
+#endif
+
   VertexTransform(renderVertices);
 
 #else
@@ -1213,6 +1241,7 @@ static void DrawBone() {
   for (int i = 0; i < model->bones_.size(); i++) {
     Bone &b = model->bones_[i];
 
+    // read from bone matrix elements corresponding with translation
     if (b.parentIndex == 0xFFFF) {
       glBegin(GL_POINTS);
       if (b.isLeg) {
@@ -1427,10 +1456,11 @@ static void DrawBulletResult() {
       continue;
     }
     if(followBone->isChain) {
-      btTransform trans;
-      bullet_dynamic_object->rigidBody->getMotionState()->getWorldTransform(trans);
+      btTransform worldTransform;
+      bullet_dynamic_object->rigidBody->getMotionState()->getWorldTransform(worldTransform);
       glPushMatrix();
-      glTranslatef(trans.getOrigin().getX(), trans.getOrigin().getY(), trans.getOrigin().getZ());
+      btVector3 worldPos = worldTransform.getOrigin();
+      glTranslatef(worldPos.getX(), worldPos.getY(), worldPos.getZ());
       glColor3f(1, 0, 0);
       glutWireCube(1);
       glPopMatrix();
@@ -1545,8 +1575,8 @@ void display_for_one_eye(int eye_index, float eye_distance) {
 
   if(draw_bones) {
     DrawBone();
+    //DrawBoneOriginal();
   }
-  // DrawBoneOriginal();
 
   if(print_bone_info) {
     PrintBoneInfo();
@@ -1586,12 +1616,6 @@ void display() {
   }
 
   glutSwapBuffers();
-
-#ifdef ENABLE_BULLET
-  if(do_animate) {
-    StepSimulation();
-  }
-#endif
 }
 
 void reshape(int w, int h) {
@@ -1850,8 +1874,11 @@ static void IdentifyChainBones(std::string seed_name, std::set<std::string>* exc
     // heuristic to identify pinned chain bones:
     // if parent bone's tail index is illegal, parent bone must be a diverging bone
     // if parent bone is a diverging bone, current bone must be excluded from physics simulation
+    // if parent bone is seed bone, current bone must be excluded from physics simulation
     model->bones_[k].isPinnedChain =
-        (model->bones_[k].isChain && !model->bones_[model->bones_[k].parentIndex].tailIndex);
+        (model->bones_[k].isChain && (!model->bones_[model->bones_[k].parentIndex].tailIndex ||
+                                      &model->bones_[model->bones_[k].parentIndex] == seed_bone //||
+                                      /*!model->bones_[k].hasVertices*/));
 
     // DBG
     //if(model->bones_[k].isPinnedChain) {
