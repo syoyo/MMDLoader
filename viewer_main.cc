@@ -140,31 +140,24 @@ float collist[7][3] = {
 #define SIGN(x) (!(x) ? 0 : (((x) > 0) ? 1 : -1))
 
 static glm::vec3 OrientToOffset(glm::vec3 orient) {
-  glm::mat4 pitch = GLM_ROTATE(
-      glm::mat4(1),
-      ORIENT_PITCH(orient), VEC_LEFT);
-  glm::mat4 yaw = GLM_ROTATE(
-      glm::mat4(1),
-      ORIENT_YAW(orient), VEC_UP);
+  glm::mat4 pitch = GLM_ROTATE(glm::mat4(1), ORIENT_PITCH(orient), VEC_LEFT);
+  glm::mat4 yaw = GLM_ROTATE(glm::mat4(1), ORIENT_YAW(orient), VEC_UP);
   return glm::vec3(yaw*pitch*glm::vec4(VEC_FORWARD, 1));
 }
 
 glm::vec3 OffsetToOrient(glm::vec3 offset) {
-    offset = glm::normalize(offset);
-    glm::vec3 t(offset.x, 0, offset.z); // flattened offset
-    t = glm::normalize(t);
-    glm::vec3 r(
-        0,
-        glm::angle(t, offset),
-        glm::angle(t, VEC_FORWARD));
-    if(static_cast<float>(fabs(offset.x)) < EPSILON && static_cast<float>(fabs(offset.z)) < EPSILON) {
-        ORIENT_PITCH(r) = -SIGN(offset.y)*glm::radians(90.0f);
-        ORIENT_YAW(r) = 0; // undefined
-        return r;
-    }
-    if(offset.x < 0) ORIENT_YAW(r)   *= -1;
-    if(offset.y > 0) ORIENT_PITCH(r) *= -1;
+  offset = glm::normalize(offset);
+  glm::vec3 t(offset.x, 0, offset.z); // flattened offset
+  t = glm::normalize(t);
+  glm::vec3 r(0, glm::angle(t, offset), glm::angle(t, VEC_FORWARD));
+  if(static_cast<float>(fabs(offset.x)) < EPSILON && static_cast<float>(fabs(offset.z)) < EPSILON) {
+    ORIENT_PITCH(r) = -SIGN(offset.y)*glm::radians(90.0f);
+    ORIENT_YAW(r) = 0; // undefined
     return r;
+  }
+  if(offset.x < 0) ORIENT_YAW(r)   *= -1;
+  if(offset.y > 0) ORIENT_PITCH(r) *= -1;
+  return r;
 }
 
 #ifdef ENABLE_EULER_CAMERA
@@ -283,10 +276,10 @@ btSequentialImpulseConstraintSolver* solver;
 btDiscreteDynamicsWorld*             dynamicsWorld;
 
 struct BulletDynamicObject_t {
-    btCollisionShape*     shape;
-    btDefaultMotionState* motionState;
-    btRigidBody*          rigidBody;
-    Bone*                 followBone;
+  btCollisionShape*     shape;
+  btDefaultMotionState* motionState;
+  btRigidBody*          rigidBody;
+  Bone*                 followBone;
 };
 
 BulletDynamicObject_t ground, fall;
@@ -407,7 +400,7 @@ static void InitSimulation() {
     float bone_length = VLength(bone_delta);
 #endif
 
-    // configure dynamic object just like ground
+    // configure dynamic object with mass, scripted object without mass
     BulletDynamicObject_t* bullet_dynamic_object = new BulletDynamicObject_t();
     float capsule_radius = 0;
     float capsule_length = 0;
@@ -564,7 +557,7 @@ static void StepSimulation() {
                                                         ORIENT_ROLL(bone_orient));
 
     // point capsule "shape" in default euler orientation
-    bone_orient_xform_glm = bone_orient_xform_glm*GLM_ROTATE(glm::mat4(1), 90.0f, glm::vec3(1, 0, 0));
+    bone_orient_xform_glm = bone_orient_xform_glm*GLM_ROTATE(glm::mat4(1), 90.0f, VEC_LEFT);
 
     // convert glm matrix into bullet matrix
     btMatrix3x3 bone_orient_xform_bt;
@@ -1502,8 +1495,7 @@ void display_for_one_eye(int eye_index, float eye_distance) {
 #ifdef ENABLE_GLM
   glm::vec3 origin(view_org[0], view_org[1], view_org[2]);
   glm::vec3 target(view_tgt[0], view_tgt[1], view_tgt[2]);
-  glm::vec3 up(0, 1, 0);
-  glm::mat4 model_view = glm::lookAt(origin, target, up);
+  glm::mat4 model_view = glm::lookAt(origin, target, VEC_UP);
   glLoadMatrixf(glm::value_ptr(model_view));
 #else
   glLoadIdentity();
@@ -1825,8 +1817,8 @@ static void IdentifyChainBones(std::string seed_name, std::set<std::string>* exc
       break;
     }
   }
-  std::set<Bone*> flood_fill;
-  flood_fill.insert(seed_bone);
+  std::set<Bone*> flood_fill_bones;
+  flood_fill_bones.insert(seed_bone);
   int n = 0;
   bool change = true;
   while(change) {
@@ -1834,18 +1826,18 @@ static void IdentifyChainBones(std::string seed_name, std::set<std::string>* exc
     for(int j = 0; j < model->bones_.size(); j++) {
       if((model->bones_[j].ascii_name.empty() ||
          (exception_list && exception_list->find(model->bones_[j].ascii_name) != exception_list->end())) &&
-         flood_fill.find(&model->bones_[model->bones_[j].parentIndex]) != flood_fill.end())
+         flood_fill_bones.find(&model->bones_[model->bones_[j].parentIndex]) != flood_fill_bones.end())
       {
         std::stringstream ss;
         ss << seed_name << n;
         model->bones_[j].ascii_name = ss.str();
-        flood_fill.insert(&model->bones_[j]);
+        flood_fill_bones.insert(&model->bones_[j]);
         change = true;
         n++;
       }
     }
   }
-  flood_fill.erase(seed_bone);
+  flood_fill_bones.erase(seed_bone);
   for(int k = 0; k < model->bones_.size(); k++) {
     if(model->bones_[k].isChain || model->bones_[k].isPinnedChain) {
       continue;
@@ -1853,7 +1845,7 @@ static void IdentifyChainBones(std::string seed_name, std::set<std::string>* exc
 
     // heuristic to identify chain bones:
     // if current bone is connected to seed bone directly/indirectly, current bone is a chain bone
-    model->bones_[k].isChain = (flood_fill.find(&model->bones_[k]) != flood_fill.end());
+    model->bones_[k].isChain = (flood_fill_bones.find(&model->bones_[k]) != flood_fill_bones.end());
 
     // heuristic to identify pinned chain bones:
     // if parent bone's tail index is illegal, parent bone must be a diverging bone
